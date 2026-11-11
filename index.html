@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>SketchPad CAD Wandtest 0.2</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,Arial;background:#eef2f6;color:#172b43}header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#172b43;color:white;flex-wrap:wrap}header strong{font-size:17px}header small{opacity:.7}.tools{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:9px;background:white;border-bottom:1px solid #d7dee7}button,input,select{font:inherit;padding:8px;border:1px solid #b8c6d5;border-radius:7px;background:white;color:#172b43}button{cursor:pointer}button.active{background:#1c67ba;color:white}button:disabled{opacity:.4}input[type=number]{width:82px}label{display:flex;align-items:center;gap:4px}.stage{height:calc(100dvh - 156px);min-height:350px;position:relative;overflow:hidden;touch-action:none}canvas{width:100%;height:100%;display:block;touch-action:none;background:#fff}.help{position:absolute;bottom:8px;left:10px;right:10px;pointer-events:none;background:#ffffffe8;padding:7px 10px;border-radius:8px;color:#344e69;font-size:12px}.status{padding:6px 12px;background:#dfeaf5;font-size:12px} @media(max-width:700px){.stage{height:calc(100dvh - 226px)}.tools{gap:4px;padding:5px}button,input,select{padding:6px;font-size:12px}header{padding:7px}.help{font-size:11px}}
+</style></head><body>
+<header><strong>SketchPad CAD – Wandtest 0.2</strong><small>Unabhängiger Prototyp · PRO 1.9.43 bleibt unverändert</small></header>
+<div class="tools">
+<button id="draw" class="active">✏️ Wand zeichnen</button><button id="edit">↔ Knoten bearbeiten</button><button id="pan">✋ Verschieben</button>
+<label>Wandstärke <input id="thick" type="number" min="50" max="600" step="10" value="200"> mm</label>
+<label>Länge <input id="len" type="number" min="1" step="10" placeholder="mm"></label><button id="apply">Länge übernehmen</button>
+<label><input id="snap" type="checkbox" checked> 50-mm-Fang</label>
+<button id="finish">Wandzug beenden</button><button id="example">Beispielraum</button><button id="undo">↶ Rückgängig</button><button id="clear">Leeren</button>
+<button id="zin">＋</button><button id="zout">－</button><button id="fit">100 %</button>
+<button id="export">JSON exportieren</button><button id="import">JSON importieren</button><input id="file" type="file" accept=".json,application/json" hidden>
+</div>
+<div class="stage"><canvas id="c"></canvas><div class="help" id="help">Wand zeichnen: Startpunkt antippen, Endpunkt antippen. Nächste Wand beginnt automatisch am letzten Punkt. Länge optional eingeben.</div></div><div class="status" id="status">Bereit.</div>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id),canvas=$('c'),ctx=canvas.getContext('2d'),stage=canvas.parentElement;
+let nodes=[],walls=[],mode='draw',start=null,hover=null,drag=null,panStart=null,selected=null,history=[],zoom=0.12,ox=0,oy=0,seq=1;
+const key='sketchpad-cad-walltest-v02';
+const clone=()=>JSON.stringify({nodes,walls,seq});
+const save=()=>{try{localStorage.setItem(key,clone())}catch(e){}};
+const snapshot=()=>{history.push(clone());if(history.length>40)history.shift()};
+const restore=s=>{const d=JSON.parse(s);nodes=d.nodes||[];walls=d.walls||[];seq=d.seq||1;save();draw()};
+const n=id=>nodes.find(v=>v.id===id);
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const screen=p=>({x:p.x*zoom+ox,y:p.y*zoom+oy});
+const world=p=>({x:(p.x-ox)/zoom,y:(p.y-oy)/zoom});
+const pt=e=>{const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}};
+const snap=p=>{if(!$('snap').checked)return p;return{x:Math.round(p.x/50)*50,y:Math.round(p.y/50)*50}};
+const nearNode=(p,r=17)=>{let best=null,d=r;for(const v of nodes){const z=dist(screen(v),p);if(z<d){d=z;best=v}}return best};
+const aligned=(p,q)=>{const dx=q.x-p.x,dy=q.y-p.y;return Math.abs(dx)>=Math.abs(dy)?{x:q.x,y:p.y}:{x:p.x,y:q.y}};
+const constrained=(base,screenPoint)=>{const q=world(screenPoint);const a=aligned(base,q);const near=nearNode(screen(a),14);if(near&&((Math.abs(near.x-base.x)<1)||(Math.abs(near.y-base.y)<1)))return{x:near.x,y:near.y,node:near};return snap(a)};
+const addNode=p=>{const old=nodes.find(v=>dist(v,p)<1);if(old)return old;const v={id:seq++,x:p.x,y:p.y};nodes.push(v);return v};
+const prune=()=>{const ids=new Set(walls.flatMap(w=>[w.a,w.b]));nodes=nodes.filter(v=>ids.has(v.id))};
+function addWall(a,b){if(dist(a,b)<1)return false;const na=a.node||addNode(a),nb=b.node||addNode(b);if(na.id===nb.id)return false;walls.push({id:seq++,a:na.id,b:nb.id,t:Math.max(50,+$('thick').value||200)});return true}
+function grid(){const w=canvas.clientWidth,h=canvas.clientHeight;const step=100*zoom;if(step<5)return;ctx.lineWidth=1;ctx.strokeStyle='#e8edf2';ctx.beginPath();let x=((ox%step)+step)%step;for(;x<w;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,h)}let y=((oy%step)+step)%step;for(;y<h;y+=step){ctx.moveTo(0,y);ctx.lineTo(w,y)}ctx.stroke()}
+function wallShape(a,b,t){const dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy)||1,nx=-dy/l*t/2,ny=dx/l*t/2;return[[a.x+nx,a.y+ny],[b.x+nx,b.y+ny],[b.x-nx,b.y-ny],[a.x-nx,a.y-ny]]}
+function draw(){const w=canvas.clientWidth,h=canvas.clientHeight;ctx.clearRect(0,0,w,h);grid();for(const wall of walls){const a=n(wall.a),b=n(wall.b);if(!a||!b)continue;const poly=wallShape(a,b,wall.t);ctx.beginPath();poly.forEach((v,i)=>{const p=screen({x:v[0],y:v[1]});i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)});ctx.closePath();ctx.fillStyle='#dce8f5';ctx.fill();ctx.strokeStyle='#2465a0';ctx.lineWidth=1;ctx.stroke();const m=screen({x:(a.x+b.x)/2,y:(a.y+b.y)/2});ctx.fillStyle='#23425f';ctx.font='12px system-ui';ctx.textAlign='center';ctx.fillText(Math.round(dist(a,b))+' mm',m.x,m.y-7)}
+if(start){const a=screen(start);ctx.fillStyle='#d2552b';ctx.beginPath();ctx.arc(a.x,a.y,5,0,7);ctx.fill();if(hover){const b=screen(constrained(start,hover));ctx.setLineDash([5,4]);ctx.strokeStyle='#d2552b';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([])}}
+if(mode==='edit'){for(const v of nodes){const p=screen(v);ctx.fillStyle=v.id===selected?'#e36c24':'#fff';ctx.strokeStyle='#145bb0';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,6,0,7);ctx.fill();ctx.stroke()}}
+$('status').textContent='Wände: '+walls.length+' · Knoten: '+nodes.length+' · Zoom: '+Math.round(zoom/.12*100)+' %'+(start?' · Wandzug aktiv':'');
+}
+function resize(){const r=stage.getBoundingClientRect(),d=devicePixelRatio||1;canvas.width=Math.max(1,Math.round(r.width*d));canvas.height=Math.max(1,Math.round(r.height*d));ctx.setTransform(d,0,0,d,0,0);draw()}
+function fit(){zoom=.12;ox=canvas.clientWidth/2-2500*zoom;oy=canvas.clientHeight/2-1500*zoom;draw()}
+function setMode(v){mode=v;start=null;hover=null;selected=null;['draw','edit','pan'].forEach(k=>$(k).classList.toggle('active',k===v));$('help').textContent=v==='draw'?'Wand zeichnen: Startpunkt antippen, Endpunkt antippen. Länge in mm eingeben und übernehmen. Wandzug beenden beendet die Kette.':v==='edit'?'Blauen Knoten antippen und ziehen. Verbundene Wände teilen denselben Knoten und bleiben verbunden.':'Zeichenfläche mit Stift, Maus oder Finger verschieben.';draw()}
+function setNode(id,p){const v=n(id);if(!v)return;const incident=walls.filter(w=>w.a===id||w.b===id);v.x=p.x;v.y=p.y;for(const w of incident){const other=n(w.a===id?w.b:w.a);if(!other)continue;const was=drag&&drag.axes&&drag.axes[w.id];if(was==='h')other.y=v.y;else if(was==='v')other.x=v.x}save()}
+function example(){snapshot();nodes=[];walls=[];seq=1;const pts=[{x:0,y:0},{x:5000,y:0},{x:5000,y:3000},{x:0,y:3000}];const v=pts.map(addNode);for(let i=0;i<4;i++)walls.push({id:seq++,a:v[i].id,b:v[(i+1)%4].id,t:200});const a=addNode({x:2500,y:0}),b=addNode({x:2500,y:1600});walls.push({id:seq++,a:a.id,b:b.id,t:100});start=null;save();fit()}
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();canvas.setPointerCapture(e.pointerId);const p=pt(e);if(mode==='pan'){panStart={p,ox,oy};return}if(mode==='edit'){const hit=nearNode(p);if(hit){snapshot();selected=hit.id;const axes={};for(const w of walls){if(w.a===hit.id||w.b===hit.id){const a=n(w.a),b=n(w.b);axes[w.id]=Math.abs(a.y-b.y)<1?'h':Math.abs(a.x-b.x)<1?'v':'free'}}drag={id:hit.id,axes}}draw();return}if(!start){const near=nearNode(p);start=near||snap(world(p));draw();return}let q=constrained(start,p);const val=+$('len').value;if(val>0){const dx=q.x-start.x,dy=q.y-start.y,sgn=(Math.abs(dx)>=Math.abs(dy)?dx:dy)>=0?1:-1;q=Math.abs(dx)>=Math.abs(dy)?{x:start.x+sgn*val,y:start.y}:{x:start.x,y:start.y+sgn*val};const near=nodes.find(v=>dist(v,q)<1);if(near)q.node=near}snapshot();if(addWall(start,q)){start=q.node||nodes[nodes.length-1];$('len').value='';save()}draw()});
+canvas.addEventListener('pointermove',e=>{const p=pt(e);if(panStart){ox=panStart.ox+p.x-panStart.p.x;oy=panStart.oy+p.y-panStart.p.y;draw();return}if(drag){let q=snap(world(p));setNode(drag.id,q);draw();return}if(start){hover=p;draw()}});
+const end=()=>{drag=null;panStart=null};canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
+['draw','edit','pan'].forEach(id=>$(id).onclick=()=>setMode(id));
+$('finish').onclick=()=>{start=null;hover=null;draw()};
+$('apply').onclick=()=>{if(!start){alert('Zuerst Startpunkt für eine Wand setzen.');return}const length=+$('len').value;if(!(length>0)){alert('Bitte Länge in mm eingeben.');return}let q=hover?constrained(start,hover):{x:start.x+length,y:start.y};const dx=q.x-start.x,dy=q.y-start.y,sgn=(Math.abs(dx)>=Math.abs(dy)?dx:dy)>=0?1:-1;q=Math.abs(dx)>=Math.abs(dy)?{x:start.x+sgn*length,y:start.y}:{x:start.x,y:start.y+sgn*length};snapshot();if(addWall(start,q)){start=nodes[nodes.length-1];$('len').value='';save();draw()}};
+$('example').onclick=example;$('clear').onclick=()=>{if(!confirm('CAD-Testzeichnung leeren?'))return;snapshot();nodes=[];walls=[];start=null;save();draw()};
+$('undo').onclick=()=>{if(history.length){restore(history.pop());start=null}};
+function changeZoom(k){const mid={x:canvas.clientWidth/2,y:canvas.clientHeight/2},before=world(mid);zoom=Math.max(.015,Math.min(1.5,zoom*k));ox=mid.x-before.x*zoom;oy=mid.y-before.y*zoom;draw()}
+$('zin').onclick=()=>changeZoom(1.25);$('zout').onclick=()=>changeZoom(.8);$('fit').onclick=fit;
+$('export').onclick=()=>{const blob=new Blob([JSON.stringify({format:'SketchPad CAD Wandtest 0.2',nodes,walls,seq},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='sketchpad-cad-test.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+$('import').onclick=()=>$('file').click();$('file').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.nodes)||!Array.isArray(d.walls))throw Error('Ungültige Datei');snapshot();nodes=d.nodes;walls=d.walls;seq=d.seq||Math.max(1,...nodes.map(v=>v.id),...walls.map(v=>v.id))+1;start=null;save();fit()}catch(err){alert('Import fehlgeschlagen: '+err.message)}e.target.value=''};
+canvas.addEventListener('wheel',e=>{e.preventDefault();changeZoom(e.deltaY<0?1.12:.89)},{passive:false});
+try{const s=localStorage.getItem(key);if(s)restore(s)}catch(e){}new ResizeObserver(resize).observe(stage);resize();fit();
+})();
+</script></body></html>
