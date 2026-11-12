@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>SketchPad Pro – Wandgenerator 3.7.1</title>
+<title>SketchPad Pro – Wandgenerator 3.8</title>
 <style>
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -28,6 +28,10 @@ button{cursor:pointer}
 #top{position:absolute;right:12px;top:12px;display:flex;gap:6px;z-index:3}
 #top button{width:46px;height:46px;border:1px solid #d6dee7;border-radius:12px;background:#fff;box-shadow:0 4px 14px #17304a14;font-size:20px;display:flex;align-items:center;justify-content:center}
 #top button:disabled{opacity:.35}
+#numpad{position:absolute;z-index:8;display:grid;grid-template-columns:repeat(4,46px);gap:5px;background:#172b43;padding:7px;border-radius:12px;box-shadow:0 8px 24px #0005;touch-action:none}
+#numpad button{height:40px;border:0;border-radius:8px;background:#fff;color:#172b43;font-size:18px;font-weight:600}
+#numpad button.f{background:#2c4462;color:#fff;font-size:15px}
+#numpad button.ok{background:#2454d9;color:#fff;grid-column:span 2}
 #opPanel{position:absolute;right:12px;top:66px;width:300px;max-height:calc(100% - 80px);overflow:auto;background:#fff;border:1px solid #d6dee7;border-radius:14px;box-shadow:0 8px 28px #17304a2e;padding:12px 12px 10px;z-index:4}
 #opPanel h4{margin:0 0 8px;font-size:15px;display:flex;justify-content:space-between;align-items:center}
 #opPanel .r{display:grid;grid-template-columns:1fr 84px 22px 30px;align-items:center;gap:5px;margin:5px 0;font-size:13px;color:#3d5571}
@@ -123,6 +127,7 @@ button{cursor:pointer}
  <div id="opPanel" hidden></div>
  <div id="chainBar" hidden><button id="bChainUndo" class="sec">Letzte zurück</button><button id="bOff" class="sec">📐 Abstand</button><button id="bLen" class="sec">📏 Maß</button><button id="bDone">Fertig</button></div>
  <div id="hint"></div>
+ <div id="numpad" hidden></div>
 </div>
 
 <script>
@@ -442,7 +447,7 @@ function setLength(w,side,target,movingId){
 
 /* ---------- Zustand ---------- */
 let view={z:.1,x:0,y:0},tool='select';
-let chain=null,preview=null,placing=false,roomDrag=null;
+let chain=null,preview=null,placing=false,roomDrag=null,penDraw=null,lastCreated=[],placingTyped=false,blkHover=null;
 let sel=null,drag=null,panStart=null,guides=[];
 let undoStack=[],redoStack=[];
 const pointers=new Map();let pinch=null,gestureBlocked=false;
@@ -644,6 +649,7 @@ function commitPoint(){
  pushUndo();
  const r=applyWall(S,chain.last,preview,chainProps(unit(sub(preview,chain.last))));
  if(!r){undoStack.pop();return}
+ lastCreated=r.created;if(placingTyped)for(const w of r.created)w.typed=true;
  reindex();
  if(!chain.firstId)chain.firstId=r.a;
  const B=N(r.b),closed=r.b===chain.firstId,docked=preview.kind==='node'||preview.kind==='wall';
@@ -702,8 +708,9 @@ function drawStartOffsets(pt){
  for(const [a,b,k] of items){
   const L=dot(sub(b,a),h.u);if(L<1)continue;
   const m=scr(add(mul(add(a,b),.5),mul(h.n,24*px))),txt=fmt(L),tw=ctx.measureText(txt).width;
-  ctx.fillStyle='#fff';ctx.strokeStyle=C.newDim;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m.x-tw/2-6,m.y-11,tw+12,22,6);ctx.fill();ctx.stroke();
-  ctx.fillStyle=C.newDim;ctx.fillText(txt,m.x,m.y);
+  const gc=!pt&&chain&&chain.offK===k?'#15803d':C.newDim;
+  ctx.fillStyle='#fff';ctx.strokeStyle=gc;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m.x-tw/2-6,m.y-11,tw+12,22,6);ctx.fill();ctx.stroke();
+  ctx.fillStyle=gc;ctx.fillText(txt,m.x,m.y);
   offLabels.push({x:m.x,y:m.y,r:Math.max(20,tw/2+10),k,len:L});
  }
  ctx.setTransform(dpr*view.z,0,0,dpr*view.z,dpr*view.x,dpr*view.y);
@@ -731,7 +738,7 @@ function editStartOffset(l){
   const wt=wallTarget(fp,2);
   if(wt&&dist(wt.face,fp)<1.5)chain.last={...chain.last,x:wt.pt.x,y:wt.pt.y,wallId:wt.w.id,side:wt.side,show:fp};
   else{const ax=add(fp,mul(h2.n,-h2.off));chain.last={...chain.last,x:ax.x,y:ax.y,show:fp}}
-  render();
+  chain.offK=l.k;render();
  });
 }
 // Zusatzlänge, wenn der Wandzug auf einer Wandseite beginnt: Maße zählen ab der Wandseite
@@ -758,7 +765,15 @@ function placeLength(L,dir){
  const d=dir||chainDir();L+=startExtra(d);
  const q=add(chain.last,mul(d,L)),nd=S.nodes.find(n=>dist(n,q)<.5);
  preview=nd?{x:nd.x,y:nd.y,nodeId:nd.id,kind:'node'}:{x:q.x,y:q.y,kind:wallOnAxis(S,q)?'wall':'free'};
- commitPoint();if(chain)chain.dir=d;preview=null;render();
+ placingTyped=true;commitPoint();placingTyped=false;if(chain)chain.dir=d;preview=null;render();
+}
+// Stift/Finger: nach dem Abheben steht die Wand still; Maß kann sofort eingetippt werden (grün), sonst bleibt die Skizze
+function openPenLength(snap,ch,dir,Lp){
+ const ws=lastCreated.filter(w=>W(w.id));if(!ws.length||!dir)return;
+ const P=N(ws[0].a),Q=N(ws[ws.length-1].b),m=scr(mul(add(P,Q),.5)),n=leftN(dir);
+ const x=Math.max(70,Math.min(cv.clientWidth-70,m.x+n.x*84)),y=Math.max(40,Math.min(cv.clientHeight-40,m.y+n.y*84));
+ openEditor(x,y,Lp,v=>{if(!(v>0)||Math.abs(v-Lp)<.5&&false)return;S=JSON.parse(snap);reindex();chain=ch;A=analyze(S);undoStack.pop();placeLength(v,dir)},null,true);
+ editor.inp.placeholder='Länge mm';
 }
 function endChain(){closeEditor();off=null;chain=null;preview=null;guides=[];ui();render()}
 // Startpunkt mit Abstand ab einem bestehenden Punkt versetzen.
@@ -851,7 +866,13 @@ function drawOpening(op,st,ghost){
  if(op.type==='radiator'){drawRadiator(op,g,ghost);return}
  ctx.save();if(ghost)ctx.globalAlpha=.7;
  const inRoom=A&&(A.cls.get(g.w.id+':L')==='room'||A.cls.get(g.w.id+':R')==='room');
- polyPath([pt(s0,L+.9*px),pt(e0,L+.9*px),pt(e0,-R-.9*px),pt(s0,-R-.9*px)]);ctx.fillStyle=inRoom?C.room:'#f7f8fa';ctx.fill();
+ if(op.type==='door'){
+  // Tür: Boden der Aufgehseite läuft bis unter das (geschlossene) Türblatt in der Flucht der Wand; dahinter die andere Seite
+  const sw=op.swing||1,fsd=sw>0?L:-R,fo=sw>0?-R:L,lt=Math.min(52,L+R),mid=fsd-sw*lt,cSw=A?.cls.get(g.w.id+':'+(sw>0?'L':'R'))==='room',cOt=A?.cls.get(g.w.id+':'+(sw>0?'R':'L'))==='room';
+  polyPath([pt(s0,fsd+sw*.9*px),pt(e0,fsd+sw*.9*px),pt(e0,mid),pt(s0,mid)]);ctx.fillStyle=cSw?C.room:'#f7f8fa';ctx.fill();
+  polyPath([pt(s0,mid),pt(e0,mid),pt(e0,fo-sw*.9*px),pt(s0,fo-sw*.9*px)]);ctx.fillStyle=cOt?C.room:'#eef1f4';ctx.fill();
+  ctx.strokeStyle='#7d8fa3';ctx.lineWidth=1*px;ctx.beginPath();seg(pt(s0,mid),pt(e0,mid));ctx.stroke();
+ }else{polyPath([pt(s0,L+.9*px),pt(e0,L+.9*px),pt(e0,-R-.9*px),pt(s0,-R-.9*px)]);ctx.fillStyle=inRoom?C.room:'#f7f8fa';ctx.fill()}
  const sel0=sel?.type==='op'&&sel.id===op.id,col=sel0?C.sel:C.edge;
  ctx.strokeStyle=col;ctx.lineWidth=1.4*px;ctx.beginPath();seg(pt(s0,L),pt(s0,-R));seg(pt(e0,L),pt(e0,-R));ctx.stroke();
  if(op.type==='door'){
@@ -1007,7 +1028,7 @@ function openOpPanel(op,focusFirst){
  if(focusFirst&&inputs[0])setTimeout(()=>inputs[0].focus(),0);
 }
 function openOpPanelKeep(op){undoStack.pop();openOpPanel(op,false)}
-function closeOpPanel(){const P=$('opPanel');P.hidden=true;P.innerHTML='';opPan=null;changed();buildCtx()}
+function closeOpPanel(){numpadHide();const P=$('opPanel');P.hidden=true;P.innerHTML='';opPan=null;changed();buildCtx()}
 
 /* ---------- Rechtecke: Kamin, Vorsatzschale, Raumteiler ---------- */
 // Block {id,x,y,w,d (Tiefe), name, full (raumhoch), h (Höhe bei halbhoch)} – achsparallel, Maße in mm
@@ -1017,6 +1038,13 @@ let blkDraw=null;
 function blkRect(a,b){return{x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),w:Math.abs(b.x-a.x),d:Math.abs(b.y-a.y)}}
 function hitBlock(p){for(const b of [...(S.blocks||[])].reverse())if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.d)return b;return null}
 function blkCorners(b){return[V(b.x,b.y),V(b.x+b.w,b.y),V(b.x+b.w,b.y+b.d),V(b.x,b.y+b.d)]}
+// Trifft der Kontakt das aktuell ausgewählte Element (oder einen Griff davon)?
+function selHit(p){if(!sel)return false;const tol=SNAP_PX/view.z;
+ if(sel.type==='node'){const n=N(sel.id);return n&&dist(n,p)<tol*1.2}
+ if(sel.type==='wall'){const w=W(sel.id);if(!w)return false;if([w.a,w.b].some(id=>dist(N(id),p)<tol*1.2))return true;return hitWall(p)?.id===sel.id}
+ if(sel.type==='op'){const o=hitOpening(p);return o?.id===sel.id}
+ if(sel.type==='blk'){return hitBlkHandle(p)>=0||hitBlock(p)?.id===sel.id}
+ return false}
 function hitBlkHandle(p){const b=sel?.type==='blk'&&blkById(sel.id);if(!b)return -1;const tol=14/view.z;return blkCorners(b).findIndex(c=>dist(c,p)<tol)}
 // Kanten an Wandkanten-Ecken (Flucht) bzw. 10-mm-Raster ausrichten
 function blkHit(v,axis,tol){let best=null,bd=tol;if(A)for(const c of A.geo.corners){const q=axis==='x'?c.p.x:c.p.y,d=Math.abs(q-v);if(d<bd){bd=d;best=q}}for(const b of S.blocks||[]){if(drag?.id===b.id)continue;for(const q of axis==='x'?[b.x,b.x+b.w]:[b.y,b.y+b.d]){const d=Math.abs(q-v);if(d<bd){bd=d;best=q}}}return best}
@@ -1042,8 +1070,9 @@ function drawBlkDims(st){
   const topFree=!inWall(V(b.x+b.w/2,b.y-e)),leftFree=!inWall(V(b.x-e,b.y+b.d/2));
   const items=[{t:fmt(b.w),x:(a.x+c.x)/2,y:topFree?a.y-11:c.y+11,k:'w'},{t:fmt(b.d),x:leftFree?a.x-6:c.x+6,y:(a.y+c.y)/2,k:'d',left:leftFree,right:!leftFree}];
   for(const it of items){const tw=ctx.measureText(it.t).width,x=it.left?it.x-tw/2-4:it.right?it.x+tw/2+4:it.x;
-   ctx.fillStyle='#ffffffe6';ctx.beginPath();ctx.roundRect(x-tw/2-4,it.y-9,tw+8,18,5);ctx.fill();ctx.fillStyle='#3d4f63';ctx.fillText(it.t,x,it.y);
-   const k=it.k;labels.push({x,y:it.y,r:Math.max(16,tw/2+6),len:k==='w'?b.w:b.d,edit:v=>{if(v<20)return;if(k==='w')b.w=v;else b.d=v}})}
+   const m=msOf(b,it.k),t2=it.t+(m===2?' ✓':''),tw2=ctx.measureText(t2).width,bx=avoidBox(x,it.y,tw2+8,18,it.k==='w'?0:(it.left?-1:1),it.k==='w'?-1:0);
+   ctx.fillStyle='#ffffffe6';ctx.beginPath();ctx.roundRect(bx.x-tw2/2-4,bx.y-9,tw2+8,18,5);ctx.fill();ctx.fillStyle=m?'#15803d':'#3d4f63';ctx.fillText(t2,bx.x,bx.y);
+   const k=it.k;labels.push({x:bx.x,y:bx.y,r:Math.max(16,tw2/2+6),len:k==='w'?b.w:b.d,edit:v=>{if(v<20)return;if(k==='w')b.w=v;else b.d=v;markMeasured(b,k)}})}
   const nm=(b.name||'')+(b.full===false?(b.name?' · ':'')+'h '+fmt(b.h||0):'');
   if(nm&&Math.abs(c.x-a.x)>30){ctx.font='600 12px system-ui,Arial,sans-serif';const tw=ctx.measureText(nm).width;const m=V((a.x+c.x)/2,(a.y+c.y)/2);
    if(tw<Math.abs(c.x-a.x)-6){ctx.fillStyle='#3d4f63';ctx.fillText(nm,m.x,m.y)}else{ctx.save();ctx.translate(m.x,m.y);if(Math.abs(c.y-a.y)>tw+6)ctx.rotate(-Math.PI/2);ctx.fillStyle='#3d4f63';ctx.fillText(nm,0,0);ctx.restore()}}
@@ -1052,21 +1081,24 @@ function drawBlkDims(st){
 function openBlkPanel(b,focusName){
  const P=$('opPanel');opPan={id:b.id,blk:1};pushUndo();
  const lb=(t,d)=>`<span class="lb"><b>${t}</b>${d?`<small>${d}</small>`:''}</span>`;
+ const SYMB=['○','●','✓'],stB=k=>{const m=msOf(b,k);return `<button class="st s${m}" data-sb="${k}">${SYMB[m]}</button>`};
  let h=`<h4>Rechteck – Maße <button id="pClose" style="border:0;background:none;font-size:18px">✕</button></h4>`;
  h+=`<div class="r seg2">${lb('Name','z. B. Kamin, Vorsatz, Raumteiler')}<input id="bName" type="text" value="${(b.name||'').replace(/"/g,'&quot;')}" placeholder="Name" style="text-align:left"></div>`;
  h+=`<div class="leg" style="margin-top:4px">${['Kamin','Vorsatzschale','Raumteiler','Säule','Schacht'].map(n=>`<button class="qn" data-n="${n}" style="border:1px solid #c3cfdc;background:#fff;border-radius:7px;padding:3px 7px;margin:2px 2px 0 0;font-size:12px">${n}</button>`).join('')}</div>`;
- h+=`<div class="r">${lb('Breite','waagrecht')}<input data-b="w" type="text" inputmode="decimal" value="${Math.round(b.w)}"><span>mm</span><span></span></div>`;
- h+=`<div class="r">${lb('Tiefe','senkrecht')}<input data-b="d" type="text" inputmode="decimal" value="${Math.round(b.d)}"><span>mm</span><span></span></div>`;
+ h+=`<div class="r">${lb('Breite','waagrecht')}<input data-b="w" type="text" inputmode="decimal" value="${Math.round(b.w)}"><span>mm</span>${stB('w')}</div>`;
+ h+=`<div class="r">${lb('Tiefe','senkrecht')}<input data-b="d" type="text" inputmode="decimal" value="${Math.round(b.d)}"><span>mm</span>${stB('d')}</div>`;
  h+=`<div class="r seg2">${lb('Höhe','')}<div class="seg"><button data-f="1" class="${b.full!==false?'on':''}">raumhoch</button><button data-f="0" class="${b.full===false?'on':''}">halbhoch</button></div></div>`;
- if(b.full===false)h+=`<div class="r">${lb('Höhe','ab Boden')}<input data-b="h" type="text" inputmode="decimal" value="${Math.round(b.h||0)}"><span>mm</span><span></span></div>`;
+ if(b.full===false)h+=`<div class="r">${lb('Höhe','ab Boden')}<input data-b="h" type="text" inputmode="decimal" value="${Math.round(b.h||0)}"><span>mm</span>${stB('h')}</div>`;
  h+=`<div class="btns"><button id="pDel" class="warn">Löschen</button><button id="pOk" style="background:#172b43;color:#fff;border-color:#172b43">Fertig</button></div>`;
  P.innerHTML=h;P.hidden=false;$('ctx').hidden=true;
- const nm=$('bName');nm.addEventListener('input',()=>{b.name=nm.value;changed()});nm.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();P.querySelector('input[data-b]')?.focus()}});
+ const nm=$('bName');nm.addEventListener('input',()=>{b.name=nm.value;changed();buildCtx()});nm.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();P.querySelector('input[data-b]')?.focus()}});
  P.querySelectorAll('.qn').forEach(x=>x.onclick=()=>{b.name=x.dataset.n;if(x.dataset.n==='Raumteiler'&&b.full!==false){b.full=false;b.h=b.h||1100}changed();undoStack.pop();openBlkPanel(b)});
  const inputs=[...P.querySelectorAll('input[data-b]')];
  inputs.forEach((inp,i)=>{inp.addEventListener('focus',()=>inp.select());
-  inp.addEventListener('input',()=>{const v=parseNum(inp.value);if(Number.isFinite(v)&&v>=(inp.dataset.b==='h'?0:20)){b[inp.dataset.b]=v;changed()}});
+  inp.addEventListener('input',()=>{const v=parseNum(inp.value);if(Number.isFinite(v)&&v>=(inp.dataset.b==='h'?0:20)){b[inp.dataset.b]=v;markMeasured(b,inp.dataset.b);bSt(inp.dataset.b);changed()}});
   inp.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();const nx=inputs[i+(e.shiftKey?-1:1)];if(nx)nx.focus();else closeOpPanel()}else if(e.key==='Escape')closeOpPanel()})});
+ function bSt(k){const m=msOf(b,k),x=P.querySelector(`[data-sb="${k}"]`);if(x){x.className='st s'+m;x.textContent=SYMB[m]}}
+ P.querySelectorAll('[data-sb]').forEach(x=>x.onclick=()=>{toggleOk(b,x.dataset.sb);bSt(x.dataset.sb);changed()});
  P.querySelectorAll('[data-f]').forEach(x=>x.onclick=()=>{b.full=x.dataset.f==='1';if(!b.full&&!b.h)b.h=1100;changed();undoStack.pop();openBlkPanel(b)});
  $('pClose').onclick=$('pOk').onclick=closeOpPanel;
  $('pDel').onclick=()=>{S.blocks=S.blocks.filter(x=>x!==b);closeOpPanel();sel=null;changed();buildCtx()};
@@ -1117,6 +1149,7 @@ function render(){
  }
  if(tool==='room'&&roomDrag)dot2(roomDrag.start,C.snap,'#c48a00',6);
  if(blkDraw)dot2(blkDraw.start,C.snap,'#c48a00',6);
+ else if(tool==='blk'&&blkHover)dot2(blkHover,C.snap,'#c48a00',7);
  if(opDraw){const op=(S.openings||[]).find(o=>o.id===opDraw.id),g=op&&opGeom(op);if(g)dot2(g.P(opDraw.t0),C.snap,'#c48a00',7)}
  if(drag?.snap&&(drag.snap.nodeId||drag.snap.wallId))dot2(drag.snap.show||drag.snap,C.snap,'#c48a00',8);
  ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -1132,7 +1165,7 @@ function render(){
 function infoBubble(t,x,y){ctx.font='600 13px system-ui,Arial,sans-serif';const w=ctx.measureText(t).width+16;x=Math.min(x,cv.clientWidth-w-6);ctx.fillStyle='#172b43ee';ctx.beginPath();ctx.roundRect(x,y-13,w,26,8);ctx.fill();ctx.fillStyle='#fff';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(t,x+8,y)}
 // Höhenangaben an Fenstern und Türen (für die spätere Planung / 3D)
 // Text aus Teilen, jeder Teil mit eigener Farbe (Status): offen = orange mit „?“, kontrolliert = „✓“
-function stTxt(op,k,txt,base){const m=msOf(op,k);return m===2?{t:txt+' ✓',c:'#15803d'}:{t:txt,c:base}}
+function stTxt(op,k,txt,base){const m=msOf(op,k);return m===2?{t:txt+' ✓',c:'#15803d'}:m===1?{t:txt,c:'#15803d'}:{t:txt,c:base}}
 function drawParts(parts,cx,cy,bg){
  const sep=' · ';let tw=0;const ws=parts.map(p=>ctx.measureText(p.t).width),sw=ctx.measureText(sep).width;tw=ws.reduce((a,b)=>a+b,0)+sw*(parts.length-1);
  ctx.fillStyle=bg||'#ffffffe6';ctx.beginPath();ctx.roundRect(cx-tw/2-5,cy-9,tw+10,18,5);ctx.fill();
@@ -1140,7 +1173,7 @@ function drawParts(parts,cx,cy,bg){
  return tw;
 }
 function partsW(parts){return parts.reduce((a,p)=>a+ctx.measureText(p.t).width,0)+ctx.measureText(' · ').width*(parts.length-1)}
-const RAD_C='#c2410c',WIN_C='#1b7f5a',DOOR_C='#7c4a12';
+const RAD_C='#c2410c',WIN_C='#3d4f63',DOOR_C='#3d4f63';
 function radParts(op){return[stTxt(op,'hkOK','HKOK '+fmt((op.uk??0)+(op.h??0)),RAD_C),stTxt(op,'uk','HKUK '+fmt(op.uk??0),RAD_C),stTxt(op,'vW','vW '+fmt((op.abW??50)+(op.d??100)),RAD_C)]}
 // Heizkörper-Maßkette vor dem Heizkörper (Abstand ab Ecke + Breite), darüber die Höhen – alles in Heizkörperfarbe
 function radLayout(op,g){
@@ -1162,7 +1195,7 @@ function drawRadDims(st){
   for(const pc of L.pieces){if(pc.len<1)continue;const a=P(pc.t0),c=P(pc.t1);seg(a,c);for(const q of [a,c]){const tk=4;ctx.moveTo(q.x-L.nn.x*tk-g.u.x*tk,q.y-L.nn.y*tk-g.u.y*tk);ctx.lineTo(q.x+L.nn.x*tk+g.u.x*tk,q.y+L.nn.y*tk+g.u.y*tk)}}
   ctx.stroke();
   ctx.font='600 12px system-ui,Arial,sans-serif';
-  for(const pc of L.pieces){if(pc.len<1)continue;const m=add(scr(g.pt((pc.t0+pc.t1)/2,L.b.f)),mul(L.nn,L.num));
+  for(const pc of L.pieces){if(pc.len<1)continue;const m0=add(scr(g.pt((pc.t0+pc.t1)/2,L.b.f)),mul(L.nn,L.num)),m=avoidBox(m0.x,m0.y,pc.tw+8,18,Math.round(L.nn.x),Math.round(L.nn.y));
    ctx.fillStyle='#fff7f2';ctx.beginPath();ctx.roundRect(m.x-pc.tw/2-4,m.y-9,pc.tw+8,18,5);ctx.fill();ctx.fillStyle=pc.p.c;ctx.fillText(pc.p.t,m.x,m.y);
    const k=pc.k;labels.push({x:m.x,y:m.y,r:Math.max(16,pc.tw/2+6),len:pc.len,edit:v=>{if(k==='w'){const d=getOpDist(op);op.w=v;set.rad.w=v;setOpDist(op,d)}else if(k==='dist')setOpDist(op,v);else if(k==='thW')op.thW=v;else if(k==='thE')op.thW=Math.max(0,getOpDist(op)-v);markMeasured(op,k)}})}
  }
@@ -1296,7 +1329,17 @@ function runStatus(st,r){
   if(ref.which==='before'&&!p.op2&&op.ref!=='e')return{op,k:'dist'};if(ref.which==='after'&&op.ref==='e')return{op,k:'dist'}}
  return null;
 }
+// Bereits gezeichnete Beschriftungen (Bildschirm); neue weichen in Richtung (dx,dy) aus, bis sie frei liegen
+let lblBoxes=[];
+function avoidBox(x,y,w,h,dx,dy){
+ const hit=(x,y)=>lblBoxes.some(b=>Math.abs(b.x-x)*2<b.w+w&&Math.abs(b.y-y)*2<b.h+h);
+ const st=Math.abs(dx)*(w+4)+Math.abs(dy)*(h+3)||h+3;let px=x,py=y;
+ for(let i=0;i<6&&hit(px,py);i++){px=x+dx*st*(i+1);py=y+dy*st*(i+1);if(!dx&&!dy)py=y-st*(i+1)}
+ if(hit(px,py)){px=x;py=y}
+ lblBoxes.push({x:px,y:py,w,h});return{x:px,y:py};
+}
 function drawDims(st,an,newIds){
+ lblBoxes=[];
  const runs=faceRuns(st,an,newIds);
  ctx.textAlign='center';ctx.textBaseline='middle';
  for(const r of runs){
@@ -1310,12 +1353,14 @@ function drawDims(st,an,newIds){
   // Heizkörper vor dieser Wandseite: Maßzahl davor setzen, damit sie nicht auf dem Heizkörper liegt
   // vor einem Heizkörper: Wandmaß direkt in die Wand (an der Wandlinie), damit es nicht vom Heizkörper verdeckt wird
   if((r.cls==='room'||r.cls==='op')&&radClear(st,r,tw)>0)gap=-(2+Math.abs(nn.x)*(tw/2+4)+Math.abs(nn.y)*9);
-  const m=add(mul(add(a,b),.5),mul(nn,gap));
+  const m0=add(mul(add(a,b),.5),mul(nn,gap)),m=avoidBox(m0.x,m0.y,tw+12,18,Math.abs(nn.x)>.5?Math.sign(nn.x):0,Math.abs(nn.y)>.5?Math.sign(nn.y):0);
   ctx.save();ctx.translate(m.x,m.y);
   const sx=runStatus(st,r),xtra=sx&&msOf(sx.op,sx.k)===2?ctx.measureText(' ✓').width:0;
   ctx.fillStyle='#ffffffd9';ctx.beginPath();ctx.roundRect(-tw/2-4-xtra/2,-9,tw+8+xtra,18,5);ctx.fill();
-  let col=r.isNew?C.newDim:r.cls==='op'?'#1b7f5a':r.cls==='room'?C.dim:C.dimOut,txt2=txt;
-  const so=runStatus(st,r);if(so){const m=msOf(so.op,so.k);if(r.cls==='op'&&so.op.type==='door')col=DOOR_C;if(m===2){col='#15803d';txt2=txt+' ✓'}}
+  let col=r.isNew?C.newDim:r.cls==='room'||r.cls==='op'?C.dim:C.dimOut,txt2=txt;
+  // Wandmaß per Hand eingegeben → grün (= echtes Raummaß); Skizze bleibt dunkel
+  if(!r.isNew&&r.cls!=='op'&&r.parts.every(p=>!p.op&&!p.op2&&!p.bk&&W(p.wallId)?.typed))col='#15803d';
+  const so=runStatus(st,r);if(so){const m=msOf(so.op,so.k);if(m>=1)col='#15803d';if(m===2)txt2=txt+' ✓'}
   ctx.fillStyle=col;ctx.fillText(txt2,0,0);ctx.restore();
   if(!r.isNew)labels.push({x:m.x,y:m.y,r:Math.max(18,tw/2+8),run:r,len:L});
  }
@@ -1395,18 +1440,43 @@ function closePalette(){$('palette')?.remove()}
 /* ---------- Inline-Eingabe ---------- */
 // Zahl lesen: „1.500“ = 1500, „22,5“ / „22.5“ = 22,5
 function parseNum(t){t=String(t).trim().replace(/\s/g,'');if(t.includes(','))t=t.replace(/\./g,'').replace(',','.');else if(!/^-?\d+\.\d{1,2}$/.test(t))t=t.replace(/\./g,'');return parseFloat(t)}
-function openEditor(x,y,value,onOk,onInput){
+function openEditor(x,y,value,onOk,onInput,soft){
  closeEditor();
  const inp=document.createElement('input');inp.className='inl';inp.type='text';inp.inputMode='decimal';inp.enterKeyHint='done';
  inp.value=value?Math.round(value):'';inp.style.left=x+'px';inp.style.top=y+'px';stage.appendChild(inp);
- editor={inp,onOk};$('ctx').hidden=true;
+ editor={inp,onOk,soft:!!soft};$('ctx').hidden=true;
  if(onInput)inp.addEventListener('input',()=>{const v=parseNum(inp.value);onInput(Number.isFinite(v)?v:0)});
  inp.focus();if(inp.value)inp.select();
  const ok=()=>{const v=parseNum(inp.value);const f=editor?.onOk;closeEditor();if(f&&Number.isFinite(v))f(v);render()};
  inp.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();ok()}else if(e.key==='Escape'){closeEditor();render()}});
  inp.addEventListener('blur',()=>setTimeout(()=>{if(editor&&editor.inp===inp){closeEditor();render()}},200));
 }
-function closeEditor(){if(editor){const i=editor.inp,x=editor.extra;editor=null;i.remove();x?.remove()}}
+// ---------- Zahlenfeld (Stift/Finger): klein, verdeckt die Maßeingabe nicht ----------
+let lastPtr='mouse',npInp=null,npFresh=false;
+document.addEventListener('pointerdown',e=>{if(!e.target.closest?.('#numpad'))lastPtr=e.pointerType},true);
+const isNum=el=>el&&el.tagName==='INPUT'&&(el.inputMode==='decimal'||el.inputMode==='numeric'||el.inputMode==='none'&&el.dataset.np);
+function numpadShow(inp){
+ const np=$('numpad');npInp=inp;npFresh=true;
+ if(!np.innerHTML){
+  np.innerHTML=['7','8','9','⌫','4','5','6','C','1','2','3',',','0','00','✓'].map(k=>`<button data-k="${k}" class="${k==='✓'?'ok':/[⌫C,]/.test(k)?'f':''}">${k==='✓'?'✓ Weiter':k}</button>`).join('');
+  np.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();const b=e.target.closest('button');if(!b||!npInp)return;const k=b.dataset.k,i=npInp;
+   if(k==='✓'){i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return}
+   let v=npFresh?'':i.value;npFresh=false;
+   if(k==='⌫')v=v.slice(0,-1);else if(k==='C')v='';else v+=k;
+   i.value=v;i.dispatchEvent(new Event('input',{bubbles:true}))});
+ }
+ np.hidden=false;
+ // Lage: neben dem Maßfenster bzw. unter der Eingabe – nie darüber
+ const st=stage.getBoundingClientRect(),P=$('opPanel'),w=np.offsetWidth,h=np.offsetHeight;let x,y;
+ if(!P.hidden&&P.contains(inp)){const r=P.getBoundingClientRect();if(r.top-st.top>st.height*.35){x=st.width-w-10;y=r.top-st.top-h-8}else{x=r.left-st.left-w-10;const ir=inp.getBoundingClientRect();y=Math.min(st.height-h-10,Math.max(10,ir.top-st.top-h/2))}}
+ else{const ir=inp.getBoundingClientRect();x=ir.left-st.left+ir.width/2-w/2;y=ir.bottom-st.top+10;if(y+h>st.height-6)y=ir.top-st.top-h-10}
+ np.style.left=Math.max(6,Math.min(st.width-w-6,x))+'px';np.style.top=Math.max(6,Math.min(st.height-h-6,y))+'px';
+}
+function numpadHide(){const np=$('numpad');if(np)np.hidden=true;npInp=null}
+document.addEventListener('focusin',e=>{const t=e.target;if(t.tagName!=='INPUT')return;
+ if(lastPtr!=='mouse'&&(t.inputMode==='decimal'||t.dataset.np)){t.dataset.np='1';t.inputMode='none';numpadShow(t)}else if(lastPtr==='mouse'&&t.dataset.np){t.inputMode='decimal';numpadHide()}else if(!t.dataset.np)numpadHide()});
+document.addEventListener('focusout',e=>{setTimeout(()=>{const a=document.activeElement;if(!a||!a.dataset?.np)numpadHide()},120)});
+function closeEditor(){if(editor){const i=editor.inp,x=editor.extra;editor=null;i.remove();x?.remove();if(npInp===i)numpadHide()}}
 function hitLabel(sp){let best=null,bd=Infinity;for(const l of labels){const d=dist(sp,l);if(d<l.r&&d<bd){bd=d;best=l}}return best}
 // Kollisionsprüfung: keine neuen Wandkreuzungen, keine umgedrehten oder zu kurzen Wände
 function crossings(){
@@ -1473,7 +1543,8 @@ function editLabel(l){
     if(hit){M.x=hit.pt.x;M.y=hit.pt.y;splitWall(S,hit.o,moving);reindex();toast('Wand an die getroffene Wand angeschlossen.');changed();buildCtx();return}
    }
    toast(Math.abs(best-l.len)<1?'Maß nicht möglich – die Wand würde mit einer anderen Wand kollidieren.':'Maß auf '+fmt(best)+' mm begrenzt – sonst Kollision mit einer anderen Wand.');
-  }
+   if(Math.abs(best-l.len)>=1){const w=W(wid);if(w)w.typed=true}
+  }else{const w=W(wid);if(w)w.typed=true}
   changed();buildCtx();
  });
 }
@@ -1485,9 +1556,20 @@ function hitWall(p){
  const a=nearestAxis(p,10/view.z);return a?a.w:null;
 }
 cv.addEventListener('pointerdown',e=>{
- e.preventDefault();closePalette();if(opPan&&e.button===0){const P=$('opPanel');P.hidden=true;P.innerHTML='';opPan=null}
+ e.preventDefault();lastPtr=e.pointerType;
+ // Klick außerhalb eines offenen Fensters/Menüs: zuerst nur schließen, erst der nächste Kontakt zeichnet/wählt
+ if(e.button===0&&pointers.size===0){
+  let closed=false;
+  if($('palette')){closePalette();closed=true}
+  if(opPan){closeOpPanel();closed=true}
+  if(!$('settings').hidden){$('settings').hidden=true;closed=true}
+  if(editor&&!editor.soft){closeEditor();closed=true}
+  if(closed){numpadHide();render();return}
+ }
+ closePalette();
  if(off?.stage==='pick'&&e.button===0){cv.setPointerCapture(e.pointerId);off.down=true;setOffDir(world(evPt(e)));return}
  if(editor){closeEditor();render()}
+ numpadHide();
  cv.setPointerCapture(e.pointerId);
  const sp=evPt(e);pointers.set(e.pointerId,sp);
  if(pointers.size===2){
@@ -1501,8 +1583,13 @@ cv.addEventListener('pointerdown',e=>{
  if(e.button===2&&chain&&(tool==='outer'||tool==='inner')){const f=chainFrom(),q=snapPoint(wp,f,null);if(dist(q,f)>1)chain.dir=unit(sub(q,f));guides=[];openLengthInput();return}
  if(e.button===1||e.button===2){panStart={sp,x:view.x,y:view.y};return}
  if(tool==='select'){const l=hitLabel(sp);if(l){editLabel(l);return}}
+ if(tool==='select'&&sel&&e.button===0&&!selHit(wp)){sel=null;buildCtx();render();return}
  if((tool==='outer'||tool==='inner')&&chain&&!chain.count&&offLabels.length){let hit=null;for(const l of offLabels)if(dist(sp,l)<l.r)hit=l;if(hit){editStartOffset(hit);return}}
- if(tool==='outer'||tool==='inner'){placing=true;preview=chain?snapChain(wp):snapPoint(wp,null,null);rememberDir();if(chain)armLongPress(sp);render();return}
+ if(tool==='outer'||tool==='inner'){
+  const pen=e.pointerType!=='mouse';
+  // Stift/Finger: Startpunkt sofort setzen, dann mit aufgesetztem Stift in die Richtung ziehen
+  if(pen&&!chain){preview=snapPoint(wp,null,null);commitPoint();preview=null;penDraw={sp,moved:false,start:true};placing=true;render();return}
+  placing=true;preview=chain?snapChain(wp):snapPoint(wp,null,null);rememberDir();if(chain)armLongPress(sp);if(pen)penDraw={sp,moved:false};render();return}
  if(tool==='door'||tool==='win'||tool==='rad'){
   const wa=wallTarget(wp,SNAP_PX*1.5/view.z);if(!wa){toast('Bitte auf eine Wand tippen.');return}
   pushUndo();const op=newOpening((tool==='door'?'door':tool==='rad'?'radiator':'window'),wa.w,wa.pt,wa.side);op.id=S.seq++;(S.openings||(S.openings=[])).push(op);
@@ -1540,10 +1627,12 @@ cv.addEventListener('pointermove',e=>{
  const wp=world(sp);
  if(tool==='outer'||tool==='inner'){
   if(editor)return;
-  if(placing||(chain&&e.pointerType!=='touch')||(!chain&&e.pointerType!=='touch')){preview=chain?snapChain(wp):snapPoint(wp,null,null);rememberDir();if(placing&&chain&&lp&&dist(sp,lp.sp)>8)armLongPress(sp);render()}
+  if(penDraw&&dist(sp,penDraw.sp)>10)penDraw.moved=true;
+  // schwebender Stift: nur vor dem Startpunkt folgen (Fangkreis + Abstände), danach steht die Wand still
+  if(placing||(chain&&e.pointerType==='mouse')||(!chain&&e.pointerType!=='touch')){preview=chain?snapChain(wp):snapPoint(wp,null,null);rememberDir();if(placing&&chain&&lp&&dist(sp,lp.sp)>8)armLongPress(sp);render()}
   return;
  }
- if(tool==='blk'){if(blkDraw){blkDraw.cur=snapFree(wp,null,true);render()}return}
+ if(tool==='blk'){if(blkDraw){blkDraw.cur=snapFree(wp,null,true);render()}else if(e.pointerType!=='touch'){blkHover=snapFree(wp,null,true);render()}return}
  if(tool==='room'){if(roomDrag){roomDrag.cur=snapFree(wp,null,true);render()}return}
  if(opDraw){opDrawMove(wp);A=analyze(S);render();return}
  if(tool==='door'||tool==='win'||tool==='rad'){const wa=wallTarget(wp,SNAP_PX*1.5/view.z);opPrev=wa?{...newOpening((tool==='door'?'door':tool==='rad'?'radiator':'window'),wa.w,wa.pt,wa.side),id:-1}:null;render();return}
@@ -1593,13 +1682,22 @@ function pointerEnd(e){
  if(!pointers.size)gestureBlocked=false;
  panStart=null;
  disarmLongPress();
- if(lpFired){lpFired=false;placing=false;return}
+ if(lpFired){lpFired=false;placing=false;penDraw=null;return}
  if(opDraw){opDrawEnd();return}
- if(placing&&e.type==='pointerup'){placing=false;commitPoint();if(e.pointerType==='touch')preview=null;render();return}
+ if(placing&&e.type==='pointerup'){placing=false;const pd=penDraw;penDraw=null;
+  if(pd){
+   if(!pd.moved&&chain&&!chain.count&&pd.start){preview=null;render();return} // nur Startpunkt gesetzt
+   if(!chain||!preview){preview=null;render();return}
+   const f=chainFrom(),dir=dist(preview.show||preview,f)>1?unit(sub(preview.show||preview,f)):null,ex=dir?startExtra(dir):0,Lp=dir?dot(sub(preview,chain.last),dir)-ex:0;
+   const snap=JSON.stringify(S),ch=structuredClone(chain),n0=undoStack.length;lastCreated=[];
+   commitPoint();preview=null;
+   if(pd.moved&&lastCreated.length&&undoStack.length>n0)openPenLength(snap,ch,dir,Lp);
+   render();return}
+  commitPoint();if(e.pointerType==='touch')preview=null;render();return}
  placing=false;
  if(blkDraw){
   const r0=blkDraw;blkDraw=null;guides=[];
-  if(r0.cur&&e.type==='pointerup'){const r=blkRect(r0.start,r0.cur);if(r.w>=50&&r.d>=50){pushUndo();const b={id:S.seq++,...r,name:'',full:true,h:0};BLK().push(b);setTool('select');sel={type:'blk',id:b.id};changed();undoStack.pop();openBlkPanel(b,true)}}
+  if(r0.cur&&e.type==='pointerup'){const r=blkRect(r0.start,r0.cur);if(r.w>=50&&r.d>=50){pushUndo();const b={id:S.seq++,...r,name:'',full:true,h:0};BLK().push(b);setTool('select');sel={type:'blk',id:b.id};changed();buildCtx()}}
   render();return;
  }
  if(roomDrag){
@@ -1626,7 +1724,8 @@ cv.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.deltaY<0?1.15:1/1.15
 
 /* ---------- Werkzeuge, Hinweise ---------- */
 function setTool(t){
- off=null;tool=t;chain=null;preview=null;roomDrag=null;blkDraw=null;guides=[];if(t!=='select')sel=null;closeEditor();
+ if(opPan)closeOpPanel();closeEditor();numpadHide();
+ off=null;tool=t;chain=null;preview=null;roomDrag=null;blkDraw=null;blkHover=null;penDraw=null;guides=[];if(t!=='select')sel=null;closeEditor();
  for(const [id,k] of [['tSelect','select'],['tRoom','room'],['tOuter','outer'],['tInner','inner'],['tDoor','door'],['tWin','win'],['tRad','rad'],['tBlk','blk']])$(id).classList.toggle('on',k===t);
  if(t!=='door'&&t!=='win'&&t!=='rad')opPrev=null;
  buildCtx();ui();render();
@@ -1643,7 +1742,7 @@ function ui(){
   select:'Wand antippen: Leiste erscheint. Wand ziehen = parallel verschieben. Maßzahl antippen = Länge ändern. Ecke ziehen zeigt Länge und Winkel (5°-Raster). Leere Fläche ziehen = Ansicht verschieben.',
   room:'Raum aufziehen. Das Rechteck ist das Innenmaß – die Außenwände legen sich nach außen.',
   outer:chain?'Nächsten Punkt setzen · Startpunkt schließt den Raum · Maß eingeben: Rechtsklick, lange drücken, Zahl tippen oder „📏 Maß“.':'Startpunkt antippen (gelb = Ecke/Kante: neue Wand wird bündig). Werkzeug nochmals antippen = Stärke ändern.',
-  inner:chain?(chain.count?'Endpunkt setzen – an einer Wand endet die Innenwand automatisch. Maß: Rechtsklick oder lange drücken.':'Orange Abstände antippen = Ansatz genau verschieben. Dann Endpunkt setzen oder Maß eingeben (Rechtsklick / lange drücken).'):'Innenwand: an Wand oder Wandecke beginnen (gelb), dann Endpunkt. „📐 Abstand“ (oder Taste A) = Start mit Abstand ab der nächsten Wandecke. Werkzeug nochmals antippen = Stärke ändern.'
+  inner:chain?(chain.count?'Endpunkt setzen – an einer Wand endet die Innenwand automatisch. Maß: Rechtsklick oder lange drücken.':'Orange Abstände antippen = Ansatz genau verschieben. Dann Endpunkt setzen oder Maß eingeben (Rechtsklick / lange drücken).'):'Innenwand: Stift auf die Wand setzen – die orangen Abstände zu den Ecken erscheinen. Abstand antippen, Maß eingeben (grün) – dann mit aufgesetztem Stift die Wand ziehen und abheben. „📐 Abstand“ = Abstand ab einer Ecke.'
  };
  $('hint').textContent=H[tool];
 }
