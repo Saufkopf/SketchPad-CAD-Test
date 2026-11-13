@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>SketchPad Pro – Wandgenerator 3.8</title>
+<title>SketchPad Pro – Wandgenerator 3.8.1</title>
 <style>
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -28,6 +28,8 @@ button{cursor:pointer}
 #top{position:absolute;right:12px;top:12px;display:flex;gap:6px;z-index:3}
 #top button{width:46px;height:46px;border:1px solid #d6dee7;border-radius:12px;background:#fff;box-shadow:0 4px 14px #17304a14;font-size:20px;display:flex;align-items:center;justify-content:center}
 #top button:disabled{opacity:.35}
+input.npf{background:#dbe6ff!important;color:#1d3fae!important}
+input[data-np]{-webkit-user-select:none;user-select:none;caret-color:transparent}
 #numpad{position:absolute;z-index:8;display:grid;grid-template-columns:repeat(4,46px);gap:5px;background:#172b43;padding:7px;border-radius:12px;box-shadow:0 8px 24px #0005;touch-action:none}
 #numpad button{height:40px;border:0;border-radius:8px;background:#fff;color:#172b43;font-size:18px;font-weight:600}
 #numpad button.f{background:#2c4462;color:#fff;font-size:15px}
@@ -770,8 +772,9 @@ function placeLength(L,dir){
 // Stift/Finger: nach dem Abheben steht die Wand still; Maß kann sofort eingetippt werden (grün), sonst bleibt die Skizze
 function openPenLength(snap,ch,dir,Lp){
  const ws=lastCreated.filter(w=>W(w.id));if(!ws.length||!dir)return;
- const P=N(ws[0].a),Q=N(ws[ws.length-1].b),m=scr(mul(add(P,Q),.5)),n=leftN(dir);
- const x=Math.max(70,Math.min(cv.clientWidth-70,m.x+n.x*84)),y=Math.max(40,Math.min(cv.clientHeight-40,m.y+n.y*84));
+ const E=scr(chain?chain.last:N(ws[ws.length-1].b)),W0=cv.clientWidth,H0=cv.clientHeight;
+ // Eingabe + Zahlenfeld in die Ecke, die vom aktuellen Endpunkt am weitesten weg ist – der Punkt bleibt sichtbar
+ const x=E.x>W0/2?Math.min(230,W0/2):Math.max(W0-170,W0/2),y=E.y>H0/2?60:H0-80;
  openEditor(x,y,Lp,v=>{if(!(v>0)||Math.abs(v-Lp)<.5&&false)return;S=JSON.parse(snap);reindex();chain=ch;A=analyze(S);undoStack.pop();placeLength(v,dir)},null,true);
  editor.inp.placeholder='Länge mm';
 }
@@ -1013,7 +1016,7 @@ function openOpPanel(op,focusFirst){
  const info=()=>{const e=$('pInfo');if(!e)return;e.textContent=op.type==='radiator'?`Bauhöhe ${fmt(op.h||0)} · Breite inkl. Thermostat ${fmt(op.w+(op.con!=='M'?(op.thW||0):0))}`:op.type==='window'?`Lichte Höhe FBOK → FOK ${fmt((op.fOK||0)-(op.fbUK||0)-(op.fbD||0))}`:(()=>{const n=doorNorm(op.w+2*(op.ue??72));return `Tür ${n.nenn} · TBA ${fmt(n.tba)} · FSTL ${fmt(n.fstl)} · RBL ${fmt(n.rbl)} (Maßblatt, Verkleidung 75)`})()};info();
  const inputs=[...P.querySelectorAll('input[data-k]')];
  inputs.forEach((inp,i)=>{
-  inp.addEventListener('focus',()=>{inp.select();P.querySelectorAll('.r').forEach(r=>r.classList.remove('cur'));inp.parentElement.classList.add('cur')});
+  inp.addEventListener('focus',()=>{selAll(inp);P.querySelectorAll('.r').forEach(r=>r.classList.remove('cur'));inp.parentElement.classList.add('cur')});
   inp.addEventListener('input',()=>{const v=parseNum(inp.value);if(Number.isFinite(v)&&v>=0){const k=inp.dataset.k;opSet(op,k,v);markMeasured(op,k);setSt(k);if(LINK[k])setSt(LINK[k]);changed();info();for(const o2 of inputs)if(o2!==inp)o2.value=Math.round(opVal(op,o2.dataset.k))}});
   inp.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();const nx=inputs[i+(e.shiftKey?-1:1)];if(nx)nx.focus();else closeOpPanel()}else if(e.key==='Escape')closeOpPanel()});
  });
@@ -1094,7 +1097,7 @@ function openBlkPanel(b,focusName){
  const nm=$('bName');nm.addEventListener('input',()=>{b.name=nm.value;changed();buildCtx()});nm.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();P.querySelector('input[data-b]')?.focus()}});
  P.querySelectorAll('.qn').forEach(x=>x.onclick=()=>{b.name=x.dataset.n;if(x.dataset.n==='Raumteiler'&&b.full!==false){b.full=false;b.h=b.h||1100}changed();undoStack.pop();openBlkPanel(b)});
  const inputs=[...P.querySelectorAll('input[data-b]')];
- inputs.forEach((inp,i)=>{inp.addEventListener('focus',()=>inp.select());
+ inputs.forEach((inp,i)=>{inp.addEventListener('focus',()=>selAll(inp));
   inp.addEventListener('input',()=>{const v=parseNum(inp.value);if(Number.isFinite(v)&&v>=(inp.dataset.b==='h'?0:20)){b[inp.dataset.b]=v;markMeasured(b,inp.dataset.b);bSt(inp.dataset.b);changed()}});
   inp.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();const nx=inputs[i+(e.shiftKey?-1:1)];if(nx)nx.focus();else closeOpPanel()}else if(e.key==='Escape')closeOpPanel()})});
  function bSt(k){const m=msOf(b,k),x=P.querySelector(`[data-sb="${k}"]`);if(x){x.className='st s'+m;x.textContent=SYMB[m]}}
@@ -1446,8 +1449,10 @@ function openEditor(x,y,value,onOk,onInput,soft){
  inp.value=value?Math.round(value):'';inp.style.left=x+'px';inp.style.top=y+'px';stage.appendChild(inp);
  editor={inp,onOk,soft:!!soft};$('ctx').hidden=true;
  if(onInput)inp.addEventListener('input',()=>{const v=parseNum(inp.value);onInput(Number.isFinite(v)?v:0)});
- inp.focus();if(inp.value)inp.select();
+ inp.focus();if(inp.value)selAll(inp);
+ inp.addEventListener('input',()=>{if(editor&&editor.inp===inp)editor.dirty=true});
  const ok=()=>{const v=parseNum(inp.value);const f=editor?.onOk;closeEditor();if(f&&Number.isFinite(v))f(v);render()};
+ editor.ok=ok;
  inp.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();ok()}else if(e.key==='Escape'){closeEditor();render()}});
  inp.addEventListener('blur',()=>setTimeout(()=>{if(editor&&editor.inp===inp){closeEditor();render()}},200));
 }
@@ -1461,7 +1466,7 @@ function numpadShow(inp){
   np.innerHTML=['7','8','9','⌫','4','5','6','C','1','2','3',',','0','00','✓'].map(k=>`<button data-k="${k}" class="${k==='✓'?'ok':/[⌫C,]/.test(k)?'f':''}">${k==='✓'?'✓ Weiter':k}</button>`).join('');
   np.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();const b=e.target.closest('button');if(!b||!npInp)return;const k=b.dataset.k,i=npInp;
    if(k==='✓'){i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return}
-   let v=npFresh?'':i.value;npFresh=false;
+   let v=npFresh?'':i.value;npFresh=false;i.classList.remove('npf');
    if(k==='⌫')v=v.slice(0,-1);else if(k==='C')v='';else v+=k;
    i.value=v;i.dispatchEvent(new Event('input',{bubbles:true}))});
  }
@@ -1472,9 +1477,13 @@ function numpadShow(inp){
  else{const ir=inp.getBoundingClientRect();x=ir.left-st.left+ir.width/2-w/2;y=ir.bottom-st.top+10;if(y+h>st.height-6)y=ir.top-st.top-h-10}
  np.style.left=Math.max(6,Math.min(st.width-w-6,x))+'px';np.style.top=Math.max(6,Math.min(st.height-h-6,y))+'px';
 }
+// Alles auswählen: mit Maus echt markieren; mit Stift/Finger nur farbig hervorheben (erste Ziffer ersetzt die Zahl)
+function selAll(inp){if(lastPtr==='mouse'){inp.select();return}inp.classList.add('npf');npFresh=true;try{const n=inp.value.length;inp.setSelectionRange(n,n)}catch(e){}}
 function numpadHide(){const np=$('numpad');if(np)np.hidden=true;npInp=null}
 document.addEventListener('focusin',e=>{const t=e.target;if(t.tagName!=='INPUT')return;
- if(lastPtr!=='mouse'&&(t.inputMode==='decimal'||t.dataset.np)){t.dataset.np='1';t.inputMode='none';numpadShow(t)}else if(lastPtr==='mouse'&&t.dataset.np){t.inputMode='decimal';numpadHide()}else if(!t.dataset.np)numpadHide()});
+ if(lastPtr!=='mouse'&&(t.inputMode==='decimal'||t.dataset.np)){t.dataset.np='1';t.inputMode='none';t.readOnly=true;numpadShow(t);selAll(t)}else if(lastPtr==='mouse'&&t.dataset.np){t.inputMode='decimal';t.readOnly=false;delete t.dataset.np;numpadHide()}else if(!t.dataset.np)numpadHide()});
+document.addEventListener('contextmenu',e=>{if(e.target.dataset?.np)e.preventDefault()},true);
+document.addEventListener('selectionchange',()=>{const a=document.activeElement;if(a?.dataset?.np&&lastPtr!=='mouse'&&a.selectionStart!==a.selectionEnd){try{const n=a.value.length;a.setSelectionRange(n,n)}catch(e){}}});
 document.addEventListener('focusout',e=>{setTimeout(()=>{const a=document.activeElement;if(!a||!a.dataset?.np)numpadHide()},120)});
 function closeEditor(){if(editor){const i=editor.inp,x=editor.extra;editor=null;i.remove();x?.remove();if(npInp===i)numpadHide()}}
 function hitLabel(sp){let best=null,bd=Infinity;for(const l of labels){const d=dist(sp,l);if(d<l.r&&d<bd){bd=d;best=l}}return best}
@@ -1564,6 +1573,7 @@ cv.addEventListener('pointerdown',e=>{
   if(opPan){closeOpPanel();closed=true}
   if(!$('settings').hidden){$('settings').hidden=true;closed=true}
   if(editor&&!editor.soft){closeEditor();closed=true}
+  else if(editor&&editor.soft&&editor.dirty){editor.ok();closed=true}
   if(closed){numpadHide();render();return}
  }
  closePalette();
@@ -1691,7 +1701,8 @@ function pointerEnd(e){
    const f=chainFrom(),dir=dist(preview.show||preview,f)>1?unit(sub(preview.show||preview,f)):null,ex=dir?startExtra(dir):0,Lp=dir?dot(sub(preview,chain.last),dir)-ex:0;
    const snap=JSON.stringify(S),ch=structuredClone(chain),n0=undoStack.length;lastCreated=[];
    commitPoint();preview=null;
-   if(pd.moved&&lastCreated.length&&undoStack.length>n0)openPenLength(snap,ch,dir,Lp);
+   const docked=!chain; // an Wand/Ecke angedockt oder Raum geschlossen → Länge ergibt sich aus dem Fang
+   if(pd.moved&&!docked&&lastCreated.length&&undoStack.length>n0)openPenLength(snap,ch,dir,Lp);
    render();return}
   commitPoint();if(e.pointerType==='touch')preview=null;render();return}
  placing=false;
