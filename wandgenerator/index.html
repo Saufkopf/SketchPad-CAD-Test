@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>SketchPad Pro – Wandgenerator 4.0</title>
+<title>SketchPad Pro – Wandgenerator 4.0.1</title>
 <style>
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -1827,9 +1827,10 @@ function inv3(m){const[a,b,c,d,e,f,g,h,i]=m,A=e*i-f*h,B=-(d*i-f*g),C=d*h-e*g,det
 function rwmBoxes(){
  const H=set.roomH||2600,out=[],W=p=>V(p.x,-p.y); // Plan (y nach unten) → 3DW (y nach oben)
  // Quader: Ursprung o (Welt), Richtung u (Einheitsvektor), Länge lx, Tiefe ly (nach links von u), Höhe z0..z1
- const box=(o,u,lx,ly,z0,z1)=>{if(lx<1||ly<1||z1-z0<1)return;const n=V(-u.y,u.x),sx=lx/1960,sy=ly/700,sz=(z1-z0)/1000;
+ const cm=v=>Math.round(v/10)*10;
+ const box=(o,u,lx,ly,z0,z1)=>{o=V(cm(o.x),cm(o.y));lx=cm(lx);ly=cm(ly);z0=cm(z0);z1=cm(z1);if(lx<10||ly<10||z1-z0<10)return;const n=V(-u.y,u.x),sx=lx/1960,sy=ly/700,sz=(z1-z0)/1000;
   out.push({M:[u.x*sx,u.y*sx,0,n.x*sy,n.y*sy,0,0,0,sz],T:[o.x,o.y,z0]})};
- const onWall=(P,u,t0,t1,o0,o1,z0,z1)=>{const n=V(-u.y,u.x),ta=Math.min(t0,t1),tb=Math.max(t0,t1);box(add(add(P,mul(u,ta)),mul(n,Math.min(o0,o1))),u,tb-ta,Math.abs(o1-o0),Math.min(z0,z1),Math.max(z0,z1))};
+ const onWall=(P,u,t0,t1,o0,o1,z0,z1)=>{P=V(cm(P.x),cm(P.y));t0=cm(t0);t1=cm(t1);o0=cm(o0);o1=cm(o1);z0=cm(z0);z1=cm(z1);const n=V(-u.y,u.x),ta=Math.min(t0,t1),tb=Math.max(t0,t1);box(add(add(P,mul(u,ta)),mul(n,Math.min(o0,o1))),u,tb-ta,Math.abs(o1-o0),Math.min(z0,z1),Math.max(z0,z1))};
  // ---- Fenster (Kunststoff-Dreh-Kipp-Fenster, Rahmentiefe 80, Ansicht 70) inkl. Brüstung, Sturz, Alu-Sohlbank außen, Fensterbank innen ausgeklinkt
  const rwmWindow=(Pw,u,o,og,L,R)=>{
   const ins=o.side||1,fin=ins>0?L:-R,fout=ins>0?-R:L,th=L+R,rev=Math.max(0,Math.min(o.rev??120,th-90)),fc=fin-ins*rev,PD=Math.min(80,th-rev-10),fo=fc-ins*PD;
@@ -1850,17 +1851,17 @@ function rwmBoxes(){
   fields.forEach(([p,q],k)=>{const y0=z0+SW,y1=z1-SW;
    ow(p,p+FW,fi,fa,y0,y1);ow(q-FW,q,fi,fa,y0,y1);ow(p+FW,q-FW,fi,fa,y0,y0+FW);ow(p+FW,q-FW,fi,fa,y1-FW,y1);
    // Isolierglas 24 mm
-   ow(p+FW,q-FW,fc-ins*13,fc-ins*37,y0+FW,y1-FW);
+   ow(p+FW,q-FW,fc-ins*20,fc-ins*40,y0+FW,y1-FW);
    // Griff (Olive) auf der Schließseite, Raumseite
    const hx=two?(k===0?q-30:p+30):q-30,hz=Math.min(y1-200,Math.max(y0+300,(y0+y1)/2));
-   ow(hx-15,hx+15,fi,fi+ins*12,hz-35,hz+35);ow(hx-5,hx+5,fi+ins*12,fi+ins*40,hz-5,hz+5);ow(hx-10,hx+10,fi+ins*40,fi+ins*58,hz-130,hz+10);
+   ow(hx-20,hx+20,fi,fi+ins*10,hz-40,hz+40);ow(hx-10,hx+10,fi+ins*10,fi+ins*40,hz-10,hz+10);ow(hx-10,hx+10,fi+ins*40,fi+ins*60,hz-140,hz+10);
   });
  };
  // ---- Tür nach ÖNORM / Kunex-Fertigzarge: RBL = FSTL+80, TBA = FSTL+50; Höhen FSTL = VOK−90, TBA = FSTL+20, RBL = FSTL+40
  const rwmDoor=(Pw,u,o,og,L,R)=>{
   const s0=og.s,e0=og.e,ow=(t0,t1,a,b,z0,z1)=>onWall(Pw,u,t0,t1,a,b,z0,z1);
-  const sw=o.swing||1,fs=sw>0?L:-R,fo=sw>0?-R:L,vs=o.vs??15,ue=o.ue??72,VOK=o.vok??2080;
-  const hF=VOK-90,hT=hF+20,hR=hF+40,Z=40,RF=25; // Zargenspiegel 40, Falz 25
+  const sw=o.swing||1,fs=sw>0?L:-R,fo=sw>0?-R:L,vs=Math.max(10,o.vs??15),ue=o.ue??72,VOK=o.vok??2080;
+  const hF=VOK-90,hT=hF+20,hR=hF+40,Z=40,RF=30; // Zargenspiegel 40, Falz 30 (volle cm)
   ow(s0,e0,-R,L,hR,H); // Sturz über der Rohbaulichte
   // Zarge (Futter) mit Falz auf der Aufgehseite
   const inner=fs-sw*RF;
@@ -1870,12 +1871,12 @@ function rwmBoxes(){
   ow(s0-ue,s0+Z,fo,fo-sw*vs,0,VOK);ow(e0-Z,e0+ue,fo,fo-sw*vs,0,VOK);ow(s0+Z,e0-Z,fo,fo-sw*vs,hF,VOK);
   ow(s0-ue,s0+Z-RF,fs,fs+sw*vs,0,VOK);ow(e0-Z+RF,e0+ue,fs,fs+sw*vs,0,VOK);ow(s0+Z-RF,e0-Z+RF,fs,fs+sw*vs,hT,VOK);
   // Türblatt 40 mm, geschlossen im Falz, 8 mm Bodenluft
-  const l0=s0+Z-RF,l1=e0-Z+RF;ow(l0,l1,inner,fs+sw*vs,8,hT);
+  const l0=s0+Z-RF,l1=e0-Z+RF;ow(l0,l1,inner,fs+sw*vs,10,hT);
   // Drücker beidseitig (Rosette, Stift, Hebel) auf der Schlossseite, Höhe 1050
-  const lock=o.hinge==='e'?l0+65:l1-65,dir=o.hinge==='e'?1:-1,hz=1050;
+  const lock=o.hinge==='e'?l0+70:l1-70,dir=o.hinge==='e'?1:-1,hz=1050;
   for(const [face,sg] of [[fs+sw*vs,sw],[inner,-sw]]){
-   ow(lock-25,lock+25,face,face+sg*10,hz-25,hz+25);ow(lock-5,lock+5,face+sg*10,face+sg*55,hz-5,hz+5);
-   ow(lock,lock+dir*130,face+sg*55,face+sg*75,hz-10,hz+10);
+   ow(lock-30,lock+30,face,face+sg*10,hz-30,hz+30);ow(lock-10,lock+10,face+sg*10,face+sg*50,hz-10,hz+10);
+   ow(lock,lock+dir*130,face+sg*50,face+sg*70,hz-10,hz+10);
   }
  };
  for(const w of S.walls){
@@ -1901,9 +1902,9 @@ function rwmBoxes(){
  for(const b of S.blocks||[])box(V(b.x,-(b.y+b.d)),V(1,0),b.w,b.d,0,b.full===false?(b.h||1100):H);
  return out;
 }
-function exportRWM(){
+function exportRWM(filter,name){
  if(!S.walls.length){toast('Keine Wände zum Exportieren.');return}
- A=analyze(S);const boxes=rwmBoxes();if(!boxes.length){toast('Nichts zu exportieren.');return}
+ A=analyze(S);let boxes=rwmBoxes();if(filter)boxes=boxes.filter(filter);if(!boxes.length){toast('Nichts zu exportieren.');return}
  const HDR=b64bytes(RWM_TPL.HDR),O1=b64bytes(RWM_TPL.O1),ON=b64bytes(RWM_TPL.ON),TR=b64bytes(RWM_TPL.TR);
  const parts=[],xs=[],ys=[],zs=[];
  const h=HDR.slice();new DataView(h.buffer).setUint32(0x80,boxes.length,true);parts.push(h);
@@ -1916,11 +1917,11 @@ function exportRWM(){
  const hw=(bb[1]-bb[0])/50,hh=(bb[3]-bb[2])/50;[-hw,hw,-hh,hh].forEach((v,k)=>dv.setFloat64(0x1ac9-base+k*8,v,true));
  parts.push(t);
  const blob=new Blob(parts,{type:'application/octet-stream'}),a=document.createElement('a'),d=new Date(),z=n=>String(n).padStart(2,'0');
- a.href=URL.createObjectURL(blob);a.download=`Aufmass_${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.rwm`;
+ a.href=URL.createObjectURL(blob);a.download=name||`Aufmass_${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.rwm`;
  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
  toast(boxes.length+' Quader als 3DW-Plus-Datei (.rwm) gespeichert.');
 }
-window.__rwm=()=>{A=analyze(S);return rwmBoxes()};
+window.__rwm=()=>{A=analyze(S);return rwmBoxes()};window.__exportRWM=exportRWM;
 
 /* ---------- Beispiel ---------- */
 function example(st){
