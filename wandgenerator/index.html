@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>SketchPad Pro – Wandgenerator 3.8.1</title>
+<title>SketchPad Pro – Wandgenerator 3.9</title>
 <style>
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -111,6 +111,7 @@ input[data-np]{-webkit-user-select:none;user-select:none;caret-color:transparent
   <h4>Wandvorgaben</h4>
   <div class="row"><span>Außenwand (mm)</span><input id="sOuter" type="number" min="20" step="5" inputmode="numeric"></div>
   <div class="row"><span>Innenwand (mm)</span><input id="sInner" type="number" min="20" step="5" inputmode="numeric"></div>
+  <div class="row"><span>Raumhöhe (mm)</span><input id="sRoomH" type="number" min="500" step="10" inputmode="numeric"></div>
   <h4 style="margin-top:14px">Anzeige</h4>
   <div class="row"><label for="sOuterDims">Außenmaße anzeigen</label><input id="sOuterDims" type="checkbox"></div>
   <div class="row"><label for="sSnap">Fang (10 mm, Fluchtlinien)</label><input id="sSnap" type="checkbox"></div>
@@ -118,6 +119,7 @@ input[data-np]{-webkit-user-select:none;user-select:none;caret-color:transparent
   <div class="row"><label for="sCenter">Wandmitte als Fangpunkt</label><input id="sCenter" type="checkbox"></div>
   <div class="row"><label for="sLen">Maß ändern</label><select id="sLen" style="padding:7px;border:1px solid #c3cfdc;border-radius:8px;max-width:150px"><option value="local">nur Nachbarwand passt sich an</option><option value="shift">alles dahinter verschieben</option></select></div>
   <div class="btns">
+   <button id="bRwm" style="grid-column:span 2;background:#172b43;color:#fff;border-color:#172b43">Export 3DW-Plus (.rwm)</button>
    <button id="bExample">Beispielraum</button>
    <button id="bExport">Daten kopieren</button>
    <button id="bImport">Daten laden</button>
@@ -168,7 +170,7 @@ const fmt=n=>Math.round(n).toLocaleString('de-DE');
 const fmtArea=a=>(a/1e6).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' m²';
 
 /* ---------- Einstellungen ---------- */
-let set={outerT:300,innerT:150,showOuter:false,snap:true,angStep:15,centerSnap:false,lenMode:'local',door:{vam:1030,ue:72,vs:15,vok:2080,griff:70},win:{w:1250,rev:120,sf:30,ssL:30,ssR:30,fbUK:900,fbD:30,fOK:2150},rad:{w:1000,h:600,uk:150,d:100,abW:50,con:'R',thW:80}};
+let set={roomH:2600,outerT:300,innerT:150,showOuter:false,snap:true,angStep:15,centerSnap:false,lenMode:'local',door:{vam:1030,ue:72,vs:15,vok:2080,griff:70},win:{w:1250,rev:120,sf:30,ssL:30,ssR:30,fbUK:900,fbD:30,fOK:2150},rad:{w:1000,h:600,uk:150,d:100,abW:50,con:'R',thW:80}};
 const DEF_DOOR={...set.door},DEF_WIN={...set.win},DEF_RAD={...set.rad};
 try{Object.assign(set,JSON.parse(localStorage.getItem(SETS)||'{}'))}catch(e){}
 set.door={...DEF_DOOR,...set.door};set.win={...DEF_WIN,...set.win};set.rad={...DEF_RAD,...set.rad};delete set.door.w;
@@ -1771,7 +1773,9 @@ $('bDone').onclick=endChain;
 $('bLen').onclick=()=>openLengthInput();
 $('bOff').onclick=()=>openOffsetInput();
 $('bChainUndo').onclick=()=>{if(!chain||!chain.count)return;const keep=chain;undo();keep.last=keep.prev.pop();keep.count--;if(!keep.count)keep.firstId=null;chain=keep;ui();render()};
-$('bSet').onclick=()=>{const s=$('settings');s.hidden=!s.hidden;if(!s.hidden){$('sOuter').value=set.outerT;$('sInner').value=set.innerT;$('sOuterDims').checked=set.showOuter;$('sSnap').checked=set.snap;$('sAng').value=String(set.angStep);$('sCenter').checked=set.centerSnap;$('sLen').value=set.lenMode}};
+$('bSet').onclick=()=>{const s=$('settings');s.hidden=!s.hidden;if(!s.hidden){$('sRoomH').value=set.roomH||2600;$('sOuter').value=set.outerT;$('sInner').value=set.innerT;$('sOuterDims').checked=set.showOuter;$('sSnap').checked=set.snap;$('sAng').value=String(set.angStep);$('sCenter').checked=set.centerSnap;$('sLen').value=set.lenMode}};
+$('sRoomH').onchange=()=>{const v=+$('sRoomH').value;if(v>=500){set.roomH=v;saveSet()}};
+$('bRwm').onclick=()=>{$('settings').hidden=true;exportRWM()};
 $('sLen').onchange=()=>{set.lenMode=$('sLen').value;saveSet()};
 $('sAng').onchange=()=>{set.angStep=+$('sAng').value;saveSet()};
 $('sCenter').onchange=()=>{set.centerSnap=$('sCenter').checked;saveSet()};
@@ -1806,6 +1810,71 @@ document.addEventListener('keydown',e=>{
   e.preventDefault();rememberDir();openLengthInput(e.key);
  }
 });
+
+/* ---------- Export 3DW-Plus / R3D Planung (.rwm) ----------
+   Alles wird als Quader exportiert (wie der Nutzer in 3DW-Plus arbeitet): Wände in Stücken um Fenster/Türen,
+   Brüstung und Sturz, Fensterbank, Heizkörper, Rechtecke. Grundlage ist eine leere 3DW-Datei als Vorlage:
+   Kopf + erstes Objekt (mit Materialien) + weitere Objekte + Ansichtsdaten. Ein Quader = Grundwürfel
+   1960 × 700 × 1000, verschoben/gedreht/skaliert über eine 3×4-Matrix (Zeilenvektor: p·M + T) samt Inverser. */
+const RWM_TPL={HDR:'DgAAAAAAAAADAAIAUkqcZgIAAAABAAAAAAAAAAAAAAAAAAAAAHC3QAAAAAAAAAAAAAAAAABAr0AAAAAAAAAAAAAAAAAAUKRAAgAAAAEAAAAAAAAAAAAAAAAAAAAAcLdAAAAAAAAAAAAAAAAAAECvQAAAAAAAAAAAAAAAAABQpEAEAAAA',O1:'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',ON:'CQAAAAAAAAABAAIAAwAAAAEAAAAgGutDY30IQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEkSZIkSdI/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzczMzMzMBEAAAAAAAFCEQAAAAAAAgGvAAAAAAAAAAADntIFOG+jUPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2Imd2Imd2D+uqqqqqopqwBgAAAAAEIhAAAAAAAAAAAACAAAAAQAAAAAAAAAAAAAAAAAAAACgnkAAAAAAAAAAAAIAAAAA4IVAAAAAAAAAAAAAAAAAAECPQE9iamVrdCBlaW56ZWxuAAAAAAAAACAgICAgICAgICAgICAgICAgICAgACAgICAgICAgICAgICAgICAgICAgACAgICAgICAgICAgICAgICAgICAgACAgICAgICAgICAgICAgICAgICAgACAgICAgICAgICAgICAgICAgICAgACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAAAAAAAAQAAAAUAAAAAAAAABgADAAMAAAABAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAAAAAAAAoJ5AAAAAAAAAAAACAAAAAOCFQAAAAAAAAAAAAAAAAABAj0BPYmpla3RlbGVtZW50AAAAAAAAAAAlAAAABAAAACEAAAAUAAAAAAAAAAEAAAAAAAAAAAAAAAEAAAA=',TR:'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'};
+function b64bytes(s){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
+function inv3(m){const[a,b,c,d,e,f,g,h,i]=m,A=e*i-f*h,B=-(d*i-f*g),C=d*h-e*g,det=a*A+b*B+c*C;
+ return[A/det,-(b*i-c*h)/det,(b*f-c*e)/det,B/det,(a*i-c*g)/det,-(a*f-c*d)/det,C/det,-(a*h-b*g)/det,(a*e-b*d)/det]}
+function rwmBoxes(){
+ const H=set.roomH||2600,out=[],W=p=>V(p.x,-p.y); // Plan (y nach unten) → 3DW (y nach oben)
+ // Quader: Ursprung o (Welt), Richtung u (Einheitsvektor), Länge lx, Tiefe ly (nach links von u), Höhe z0..z1
+ const box=(o,u,lx,ly,z0,z1)=>{if(lx<1||ly<1||z1-z0<1)return;const n=V(-u.y,u.x),sx=lx/1960,sy=ly/700,sz=(z1-z0)/1000;
+  out.push({M:[u.x*sx,u.y*sx,0,n.x*sy,n.y*sy,0,0,0,sz],T:[o.x,o.y,z0]})};
+ const onWall=(P,u,t0,t1,o0,o1,z0,z1)=>{const n=V(-u.y,u.x);box(add(add(P,mul(u,t0)),mul(n,Math.min(o0,o1))),u,t1-t0,Math.abs(o1-o0),z0,z1)};
+ for(const w of S.walls){
+  const g=A.geo.G.get(w.id);if(!g?.poly)continue;const P0=N(w.a),Pw=W(P0),u=W(g.d),[L,R]=sides(w);
+  // Ecken ohne Überschneidung: an einer Ecke aus 2 Wänden läuft die steilere Wand durch, die andere endet an deren Innenkante
+  const endT=(nid,c1,c2,far)=>{const t1=dot(sub(c1,P0),g.d),t2=dot(sub(c2,P0),g.d);
+   const ws=S.walls.filter(o=>o.a===nid||o.b===nid);let own=true;
+   if(ws.length===2){const o=ws.find(x=>x!==w),od=unit(sub(N(o.a===nid?o.b:o.a),N(nid)));
+    if(Math.abs(cross(od,g.d))>.02){const my=Math.abs(g.d.y),ot=Math.abs(od.y);own=my>ot+1e-6||(Math.abs(my-ot)<=1e-6&&w.id<o.id)}}
+   return own?far(t1,t2):(far===Math.min?Math.max(t1,t2):Math.min(t1,t2))};
+  const tmin=endT(w.a,g.aL,g.aR,Math.min),tmax=endT(w.b,g.bL,g.bR,Math.max);
+  const ops=(S.openings||[]).filter(o=>o.wallId===w.id&&o.type!=='radiator').map(o=>({o,g:opGeom(o)})).filter(x=>x.g).sort((x,y)=>x.g.s-y.g.s);
+  let cur=tmin;
+  for(const {o,g:og} of ops){
+   if(og.s>cur)onWall(Pw,u,cur,og.s,-R,L,0,H);
+   if(o.type==='door'){onWall(Pw,u,og.s,og.e,-R,L,Math.max(0,(o.vok??2080)-50),H)}
+   else{
+    onWall(Pw,u,og.s,og.e,-R,L,0,o.fbUK??900);onWall(Pw,u,og.s,og.e,-R,L,o.fOK??2150,H);
+    // Fensterbank innen
+    const ins=o.side||1,fin=ins>0?L:-R,th=L+R,rev=Math.max(0,Math.min(o.rev??150,th-40)),fc=fin-ins*rev,[ssS,ssE]=sillSE(o,og);
+    onWall(Pw,u,og.s-ssS,og.e+ssE,fc,fin+ins*(o.sf??30),o.fbUK??900,(o.fbUK??900)+(o.fbD??30));
+   }
+   cur=Math.max(cur,og.e);
+  }
+  if(tmax>cur)onWall(Pw,u,cur,tmax,-R,L,0,H);
+ }
+ for(const o of S.openings||[]){if(o.type!=='radiator')continue;const g=opGeom(o);if(!g)continue;const b=radBox(o,g),P0=g.A;
+  onWall(W(P0),W(g.u),g.s,g.e,b.o1,b.o2,o.uk??150,(o.uk??150)+(o.h??600))}
+ for(const b of S.blocks||[])box(V(b.x,-(b.y+b.d)),V(1,0),b.w,b.d,0,b.full===false?(b.h||1100):H);
+ return out;
+}
+function exportRWM(){
+ if(!S.walls.length){toast('Keine Wände zum Exportieren.');return}
+ A=analyze(S);const boxes=rwmBoxes();if(!boxes.length){toast('Nichts zu exportieren.');return}
+ const HDR=b64bytes(RWM_TPL.HDR),O1=b64bytes(RWM_TPL.O1),ON=b64bytes(RWM_TPL.ON),TR=b64bytes(RWM_TPL.TR);
+ const parts=[],xs=[],ys=[],zs=[];
+ const h=HDR.slice();new DataView(h.buffer).setUint32(0x80,boxes.length,true);parts.push(h);
+ boxes.forEach((b,i)=>{const o=(i?ON:O1).slice(),dv=new DataView(o.buffer),Mi=inv3(b.M),T=b.T,Ti=[0,1,2].map(k=>-(T[0]*Mi[k]+T[1]*Mi[3+k]+T[2]*Mi[6+k]));
+  [...b.M,...T,...Mi,...Ti].forEach((v,k)=>dv.setFloat64(0x14+k*8,v,true));parts.push(o);
+  for(const cx of [0,1960])for(const cy of [0,700])for(const cz of [0,1000]){xs.push(cx*b.M[0]+cy*b.M[3]+cz*b.M[6]+T[0]);ys.push(cx*b.M[1]+cy*b.M[4]+cz*b.M[7]+T[1]);zs.push(cx*b.M[2]+cy*b.M[5]+cz*b.M[8]+T[2])}});
+ const t=TR.slice(),dv=new DataView(t.buffer),bb=[Math.min(...xs),Math.max(...xs),Math.min(...ys),Math.max(...ys),Math.min(...zs),Math.max(...zs)],base=0x12cd;
+ for(const o of [0x16f2,0x1807])bb.forEach((v,k)=>dv.setFloat64(o-base+k*8,v,true));
+ [bb[0],bb[1],bb[2],bb[3],0,0].forEach((v,k)=>dv.setFloat64(0x1958-base+k*8,v,true));
+ const hw=(bb[1]-bb[0])/50,hh=(bb[3]-bb[2])/50;[-hw,hw,-hh,hh].forEach((v,k)=>dv.setFloat64(0x1ac9-base+k*8,v,true));
+ parts.push(t);
+ const blob=new Blob(parts,{type:'application/octet-stream'}),a=document.createElement('a'),d=new Date(),z=n=>String(n).padStart(2,'0');
+ a.href=URL.createObjectURL(blob);a.download=`Aufmass_${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.rwm`;
+ document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
+ toast(boxes.length+' Quader als 3DW-Plus-Datei (.rwm) gespeichert.');
+}
+window.__rwm=()=>{A=analyze(S);return rwmBoxes()};
 
 /* ---------- Beispiel ---------- */
 function example(st){
