@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>SketchPad Pro – Wandgenerator 3.9</title>
+<title>SketchPad Pro – Wandgenerator 4.0</title>
 <style>
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -958,9 +958,9 @@ function opDrawEnd(){
  opPrev=null;setTool('select');sel={type:'op',id:op.id};changed();undoStack.pop();openOpPanel(op,true);
 }
 // Felder: [Schlüssel, Kürzel/Begriff, kurze Beschreibung]
-const WIN_F=[['dist','Abstand','Wandecke bis Laibung'],['w','Fensterbreite','Laibung bis Laibung'],['rev','Laibungstiefe','Wandfläche innen bis Fensterrahmen'],['fbOK','FBOK','Fensterbank Oberkante ab Boden'],['fbD','FB-Dicke','Fensterbank Stärke'],['fbUK','FBUK','Fensterbank Unterkante ab Boden'],['sf','Überstand vorne','Fensterbank vor der Wandfläche'],['ssL','Überstand links','Fensterbank seitlich, von innen gesehen'],['ssR','Überstand rechts','Fensterbank seitlich, von innen gesehen'],['fOK','FOK','Fenster Oberkante (Sturz) ab Boden']];
+const WIN_F=[['dist','Abstand','Wandecke bis Laibung'],['w','Fensterbreite','Laibung bis Laibung'],['@flg','Flügel','für Export / 3D'],['rev','Laibungstiefe','Wandfläche innen bis Fensterrahmen'],['fbOK','FBOK','Fensterbank Oberkante ab Boden'],['fbD','FB-Dicke','Fensterbank Stärke'],['fbUK','FBUK','Fensterbank Unterkante ab Boden'],['sf','Überstand vorne','Fensterbank vor der Wandfläche'],['ssL','Überstand links','Fensterbank seitlich, von innen gesehen'],['ssR','Überstand rechts','Fensterbank seitlich, von innen gesehen'],['fOK','FOK','Fenster Oberkante (Sturz) ab Boden']];
 const RAD_F=[['dist','Abstand','Wandecke bis Heizkörper'],['end','HK-Ende','Wandecke bis Heizkörper-Ende (ergibt die Breite)'],['w','Breite','Heizkörper ohne Thermostat'],['@con','Thermostat','Seite, vom Raum aus gesehen'],['thE','TH-Kante','Wandecke bis Außenkante Thermostat'],['hkOK','HKOK','Heizkörper Oberkante ab Boden'],['uk','HKUK','Heizkörper Unterkante ab Boden'],['vW','vW','von Wand bis Vorderkante Heizkörper'],['#','Optional'],['thW','TH-Überstand','Thermostat seitlich über den Heizkörper'],['abW','Wandabstand','Wand bis Heizkörper-Rückseite'],['d','Bautiefe','Heizkörper Tiefe']];
-const DOOR_F=[['dist','Abstand','Wandecke bis Verkleidung'],['vam','VAM','Verkleidungsaußenmaß (Breite)'],['@hinge','Anschlag','Bandseite, von der Aufgehseite gesehen'],['@swing','Aufgehen',''],['vok','VOK','Verkleidung Oberkante ab Boden'],['vs','Verkleidungsstärke','Aufbau der Verkleidung auf der Wand'],['griff','Griff','Vorsprung Türdrücker'],['ue','Überdeckung','Verkleidung über Mauerkante, je Seite']];
+const DOOR_F=[['@norm','Normtür','ÖNORM / Kunex, Verkleidung 75'],['dist','Abstand','Wandecke bis Verkleidung'],['vam','VAM','Verkleidungsaußenmaß (Breite)'],['@hinge','Anschlag','Bandseite, von der Aufgehseite gesehen'],['@swing','Aufgehen',''],['vok','VOK','Verkleidung Oberkante ab Boden'],['vs','Verkleidungsstärke','Aufbau der Verkleidung auf der Wand'],['griff','Griff','Vorsprung Türdrücker'],['ue','Überdeckung','Verkleidung über Mauerkante, je Seite']];
 // Türgröße nach Maßblatt (Kunex Fertigzarge, Falzverkleidung 75 mm): VAM = FSTL + 179, TBA = FSTL + 50, RBL = FSTL + 80
 function doorNorm(vam){const fstl=Math.round((vam-179)/50)*50;return{fstl,tba:fstl+50,rbl:fstl+80,nenn:Math.round((fstl+50)/10)}}
 function opVal(op,k){
@@ -1007,6 +1007,8 @@ function openOpPanel(op,focusFirst){
   if(k==='#'){h+=`<div class="leg" style="margin:10px 0 2px;font-weight:600;color:#3d5571">${lab}</div>`;continue}
   if((k==='thE'||k==='thW')&&op.con==='M')continue;
   if(k==='@hinge'){const r=hingeIsRight(op);h+=`<div class="r seg2">${lb(lab,desc)}<div class="seg"><button data-h="L" class="${!r?'on':''}">links</button><button data-h="R" class="${r?'on':''}">rechts</button></div></div>`;continue}
+  if(k==='@norm'){h+=`<div class="r seg2">${lb(lab,desc)}<div class="seg">${[700,800,900].map(f=>`<button data-nt="${f}" class="${Math.round(op.w)===f+80&&Math.abs((op.ue??72)-49.5)<1?'on':''}">${f/10+5}er</button>`).join('')}</div></div>`;continue}
+  if(k==='@flg'){const f=op.flg??(op.w>1320?2:1);h+=`<div class="r seg2">${lb(lab,desc)}<div class="seg"><button data-fl="1" class="${f===1?'on':''}">1-flügelig</button><button data-fl="2" class="${f===2?'on':''}">2-flügelig</button></div></div>`;continue}
   if(k==='@con'){const c=op.con||'R';h+=`<div class="r seg2">${lb(lab,desc)}<div class="seg"><button data-c="L" class="${c==='L'?'on':''}">links</button><button data-c="M" class="${c==='M'?'on':''}">ohne</button><button data-c="R" class="${c==='R'?'on':''}">rechts</button></div></div>`;continue}
   if(k==='@swing'){const rs=roomSideOf(opGeom(op).w),inn=(op.swing||1)===rs;h+=`<div class="r seg2">${lb(lab,desc)}<div class="seg"><button data-s="in" class="${inn?'on':''}">in den Raum</button><button data-s="out" class="${!inn?'on':''}">nach außen</button></div></div>`;continue}
   const m=msOf(op,k);
@@ -1026,6 +1028,8 @@ function openOpPanel(op,focusFirst){
  P.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>{const k=b.dataset.st;toggleOk(op,k);setSt(k);if(LINK[k])setSt(LINK[k]);changed()});
  P.querySelectorAll('[data-ref]').forEach(b=>b.onclick=()=>{op.ref=b.dataset.ref;openOpPanelKeep(op)});
  P.querySelectorAll('[data-h]').forEach(b=>b.onclick=()=>{if((b.dataset.h==='R')!==hingeIsRight(op))op.hinge=op.hinge==='e'?'s':'e';changed();openOpPanelKeep(op)});
+ P.querySelectorAll('[data-nt]').forEach(b=>b.onclick=()=>{const f=+b.dataset.nt,d=getOpDist(op);op.ue=49.5;op.w=f+80;setOpDist(op,d);set.door.ue=49.5;set.door.vam=Math.round(f+179);saveSet();changed();openOpPanelKeep(op)});
+ P.querySelectorAll('[data-fl]').forEach(b=>b.onclick=()=>{op.flg=+b.dataset.fl;changed();openOpPanelKeep(op)});
  P.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{op.con=b.dataset.c;set.rad.con=op.con;saveSet();changed();openOpPanelKeep(op)});
  P.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{const rs=roomSideOf(opGeom(op).w);op.swing=b.dataset.s==='in'?rs:-rs;changed();openOpPanelKeep(op)});
  $('pClose').onclick=$('pOk').onclick=closeOpPanel;
@@ -1825,7 +1829,55 @@ function rwmBoxes(){
  // Quader: Ursprung o (Welt), Richtung u (Einheitsvektor), Länge lx, Tiefe ly (nach links von u), Höhe z0..z1
  const box=(o,u,lx,ly,z0,z1)=>{if(lx<1||ly<1||z1-z0<1)return;const n=V(-u.y,u.x),sx=lx/1960,sy=ly/700,sz=(z1-z0)/1000;
   out.push({M:[u.x*sx,u.y*sx,0,n.x*sy,n.y*sy,0,0,0,sz],T:[o.x,o.y,z0]})};
- const onWall=(P,u,t0,t1,o0,o1,z0,z1)=>{const n=V(-u.y,u.x);box(add(add(P,mul(u,t0)),mul(n,Math.min(o0,o1))),u,t1-t0,Math.abs(o1-o0),z0,z1)};
+ const onWall=(P,u,t0,t1,o0,o1,z0,z1)=>{const n=V(-u.y,u.x),ta=Math.min(t0,t1),tb=Math.max(t0,t1);box(add(add(P,mul(u,ta)),mul(n,Math.min(o0,o1))),u,tb-ta,Math.abs(o1-o0),Math.min(z0,z1),Math.max(z0,z1))};
+ // ---- Fenster (Kunststoff-Dreh-Kipp-Fenster, Rahmentiefe 80, Ansicht 70) inkl. Brüstung, Sturz, Alu-Sohlbank außen, Fensterbank innen ausgeklinkt
+ const rwmWindow=(Pw,u,o,og,L,R)=>{
+  const ins=o.side||1,fin=ins>0?L:-R,fout=ins>0?-R:L,th=L+R,rev=Math.max(0,Math.min(o.rev??120,th-90)),fc=fin-ins*rev,PD=Math.min(80,th-rev-10),fo=fc-ins*PD;
+  const s0=og.s,e0=og.e,zU=o.fbUK??900,zS=zU+(o.fbD??30),zO=o.fOK??2150,F=10,SW=70,FW=60,[ssS,ssE]=sillSE(o,og);
+  const ow=(t0,t1,a,b,z0,z1)=>onWall(Pw,u,t0,t1,a,b,z0,z1);
+  // Mauerwerk: Brüstung innen bis Rahmen, außen tiefer für die Sohlbank, Sturz
+  ow(s0,e0,fin,fo,0,zU);ow(s0,e0,fo,fout,0,zU-20);ow(s0,e0,-R,L,zO,H);
+  // Alu-Sohlbank außen (20 stark, 40 Überstand)
+  ow(s0,e0,fo,fout-ins*40,zU-20,zU);
+  // Fensterbank innen: in der Laibung so breit wie das Fenster, vor der Wand mit seitlichem Überstand – nichts ragt in die Mauer
+  ow(s0,e0,fc,fin,zU,zS);ow(s0-ssS,e0+ssE,fin,fin+ins*(o.sf??30),zU,zS);
+  // Blendrahmen (Stock) mit 10 mm Fuge seitlich und oben
+  const a=s0+F,b=e0-F,z0=zU,z1=zO-F;
+  ow(a,a+SW,fo,fc,z0,z1);ow(b-SW,b,fo,fc,z0,z1);ow(a+SW,b-SW,fo,fc,z0,z0+SW);ow(a+SW,b-SW,fo,fc,z1-SW,z1);
+  const two=(o.flg??(b-a>1300?2:1))===2,mid=(a+b)/2,fields=two?[[a+SW,mid-SW/2],[mid+SW/2,b-SW]]:[[a+SW,b-SW]];
+  if(two)ow(mid-SW/2,mid+SW/2,fo,fc,z0+SW,z1-SW);
+  const fi=fc+ins*10,fa=fc-ins*60; // Flügel steht 10 mm in den Raum
+  fields.forEach(([p,q],k)=>{const y0=z0+SW,y1=z1-SW;
+   ow(p,p+FW,fi,fa,y0,y1);ow(q-FW,q,fi,fa,y0,y1);ow(p+FW,q-FW,fi,fa,y0,y0+FW);ow(p+FW,q-FW,fi,fa,y1-FW,y1);
+   // Isolierglas 24 mm
+   ow(p+FW,q-FW,fc-ins*13,fc-ins*37,y0+FW,y1-FW);
+   // Griff (Olive) auf der Schließseite, Raumseite
+   const hx=two?(k===0?q-30:p+30):q-30,hz=Math.min(y1-200,Math.max(y0+300,(y0+y1)/2));
+   ow(hx-15,hx+15,fi,fi+ins*12,hz-35,hz+35);ow(hx-5,hx+5,fi+ins*12,fi+ins*40,hz-5,hz+5);ow(hx-10,hx+10,fi+ins*40,fi+ins*58,hz-130,hz+10);
+  });
+ };
+ // ---- Tür nach ÖNORM / Kunex-Fertigzarge: RBL = FSTL+80, TBA = FSTL+50; Höhen FSTL = VOK−90, TBA = FSTL+20, RBL = FSTL+40
+ const rwmDoor=(Pw,u,o,og,L,R)=>{
+  const s0=og.s,e0=og.e,ow=(t0,t1,a,b,z0,z1)=>onWall(Pw,u,t0,t1,a,b,z0,z1);
+  const sw=o.swing||1,fs=sw>0?L:-R,fo=sw>0?-R:L,vs=o.vs??15,ue=o.ue??72,VOK=o.vok??2080;
+  const hF=VOK-90,hT=hF+20,hR=hF+40,Z=40,RF=25; // Zargenspiegel 40, Falz 25
+  ow(s0,e0,-R,L,hR,H); // Sturz über der Rohbaulichte
+  // Zarge (Futter) mit Falz auf der Aufgehseite
+  const inner=fs-sw*RF;
+  ow(s0,s0+Z,fo,inner,0,hR);ow(e0-Z,e0,fo,inner,0,hR);ow(s0+Z,e0-Z,fo,inner,hF,hR);
+  ow(s0,s0+Z-RF,inner,fs,0,hR);ow(e0-Z+RF,e0,inner,fs,0,hR);ow(s0+Z-RF,e0-Z+RF,inner,fs,hT,hR);
+  // Verkleidung beidseitig (Gegenseite ab Durchgangslichte, Aufgehseite ab Türblatt)
+  ow(s0-ue,s0+Z,fo,fo-sw*vs,0,VOK);ow(e0-Z,e0+ue,fo,fo-sw*vs,0,VOK);ow(s0+Z,e0-Z,fo,fo-sw*vs,hF,VOK);
+  ow(s0-ue,s0+Z-RF,fs,fs+sw*vs,0,VOK);ow(e0-Z+RF,e0+ue,fs,fs+sw*vs,0,VOK);ow(s0+Z-RF,e0-Z+RF,fs,fs+sw*vs,hT,VOK);
+  // Türblatt 40 mm, geschlossen im Falz, 8 mm Bodenluft
+  const l0=s0+Z-RF,l1=e0-Z+RF;ow(l0,l1,inner,fs+sw*vs,8,hT);
+  // Drücker beidseitig (Rosette, Stift, Hebel) auf der Schlossseite, Höhe 1050
+  const lock=o.hinge==='e'?l0+65:l1-65,dir=o.hinge==='e'?1:-1,hz=1050;
+  for(const [face,sg] of [[fs+sw*vs,sw],[inner,-sw]]){
+   ow(lock-25,lock+25,face,face+sg*10,hz-25,hz+25);ow(lock-5,lock+5,face+sg*10,face+sg*55,hz-5,hz+5);
+   ow(lock,lock+dir*130,face+sg*55,face+sg*75,hz-10,hz+10);
+  }
+ };
  for(const w of S.walls){
   const g=A.geo.G.get(w.id);if(!g?.poly)continue;const P0=N(w.a),Pw=W(P0),u=W(g.d),[L,R]=sides(w);
   // Ecken ohne Überschneidung: an einer Ecke aus 2 Wänden läuft die steilere Wand durch, die andere endet an deren Innenkante
@@ -1839,13 +1891,7 @@ function rwmBoxes(){
   let cur=tmin;
   for(const {o,g:og} of ops){
    if(og.s>cur)onWall(Pw,u,cur,og.s,-R,L,0,H);
-   if(o.type==='door'){onWall(Pw,u,og.s,og.e,-R,L,Math.max(0,(o.vok??2080)-50),H)}
-   else{
-    onWall(Pw,u,og.s,og.e,-R,L,0,o.fbUK??900);onWall(Pw,u,og.s,og.e,-R,L,o.fOK??2150,H);
-    // Fensterbank innen
-    const ins=o.side||1,fin=ins>0?L:-R,th=L+R,rev=Math.max(0,Math.min(o.rev??150,th-40)),fc=fin-ins*rev,[ssS,ssE]=sillSE(o,og);
-    onWall(Pw,u,og.s-ssS,og.e+ssE,fc,fin+ins*(o.sf??30),o.fbUK??900,(o.fbUK??900)+(o.fbD??30));
-   }
+   if(o.type==='door')rwmDoor(Pw,u,o,og,L,R);else rwmWindow(Pw,u,o,og,L,R);
    cur=Math.max(cur,og.e);
   }
   if(tmax>cur)onWall(Pw,u,cur,tmax,-R,L,0,H);
