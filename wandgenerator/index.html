@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>SketchPad Pro – Wandgenerator 4.1.0</title>
+<title>SketchPad Pro – Wandgenerator 4.1.1</title>
 <style>
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -1846,6 +1846,18 @@ function rwmBoxes(){
   out.push({V:Vx,F})};
  // Rahmen je Wand: Ursprung, längs (u), quer (n, nach links), Höhe (z)
  const uz=(P,u)=>({o:[P.x,P.y,0],u:[u.x,u.y,0],n:[-u.y,u.x,0],z:[0,0,1]});
+ // Zwei Ringe gleicher Punktzahl → Körper (Deckel, Mantel); Umlaufsinn wird geprüft
+ const ringBody=(R0,R1)=>{const n=R0.length,c=R=>[0,1,2].map(k=>R.reduce((s,p)=>s+p[k],0)/n),c0=c(R0),c1=c(R1);
+  let nx=[0,0,0];for(let i=0;i<n;i++){const a=R0[i],b=R0[(i+1)%n];nx[0]+=(a[1]-b[1])*(a[2]+b[2]);nx[1]+=(a[2]-b[2])*(a[0]+b[0]);nx[2]+=(a[0]-b[0])*(a[1]+b[1])}
+  if(nx[0]*(c0[0]-c1[0])+nx[1]*(c0[1]-c1[1])+nx[2]*(c0[2]-c1[2])<0){R0=R0.slice().reverse();R1=R1.slice().reverse()}
+  const F=[[...Array(n).keys()],[...Array(n).keys()].map(i=>2*n-1-i)];for(let i=0;i<n;i++){const j=(i+1)%n;F.push([j,i,i+n,j+n])}
+  out.push({V:[...R0,...R1],F})};
+ // Runder Drücker auf Gehrung: Hals von S (Rosette) entlang n1 bis zum Knick Bp, Griff von dort entlang n2 (Länge L2), Radius r
+ const elbow=(Bp,n1,n2,L1,L2,r,k=16)=>{const e2=[n1[1]*n2[2]-n1[2]*n2[1],n1[2]*n2[0]-n1[0]*n2[2],n1[0]*n2[1]-n1[1]*n2[0]];
+  const P=(f)=>[...Array(k).keys()].map(i=>{const a=2*Math.PI*(i+.5)/k,c=Math.cos(a)*r,s=Math.sin(a)*r;return f(c,s)});
+  const pt=(b,...v)=>[0,1,2].map(j=>b[j]+v.reduce((t,[m,w])=>t+m*w[j],0));
+  const base=P((c,s)=>pt(Bp,[c,n2],[s,e2],[-L1,n1])),mit=P((c,s)=>pt(Bp,[c,n2],[s,e2],[-c,n1])),end=P((c,s)=>pt(Bp,[-c,n1],[s,e2],[L2,n2]));
+  ringBody(base,mit);ringBody(mit,end)};
  // Kreis als Vieleck (16 Seiten)
  const circ=(cx,cy,r,k=16)=>[...Array(k).keys()].map(i=>[cx+r*Math.cos(2*Math.PI*(i+.5)/k),cy+r*Math.sin(2*Math.PI*(i+.5)/k)]);
  const hexOW=(P,u,q,o0,o1)=>{P=V(cm(P.x),cm(P.y));o0=cm(o0);o1=cm(o1);if(Math.abs(o1-o0)<10)return;const f=uz(P,u);
@@ -1876,7 +1888,10 @@ function rwmBoxes(){
     mf(p,q,y0,y1,SW,rev-20,rev+FD);
     ow(p+SW,q-SW,rev,rev+20,y0+SW,y1-SW); // Isolierglas
     const hx=two?(side>0?q-SW/2:p+SW/2):q-SW/2;
-    ow(hx-20,hx+20,rev-30,rev-20,hz-40,hz+40);ow(hx-10,hx+10,rev-60,rev-30,hz-10,hz+10);ow(hx-10,hx+10,rev-80,rev-60,hz-140,hz+10);
+    // Griff: Rosette 40×80, darauf rund Ø20 auf Gehrung: Hals 40 in den Raum, Olive 140 nach unten
+    ow(hx-20,hx+20,rev-30,rev-20,hz-40,hz+40);
+    {const f=uz(V(cm(Pw.x),cm(Pw.y)),u),n1=f.n.map(v=>v*ins),Bp=[0,1,2].map(j=>f.o[j]+f.u[j]*cm(hx)+f.n[j]*cm(dO(rev-70))+f.z[j]*hz);
+     elbow(Bp,n1,[0,0,-1],40,140,10)}
    });
    // Fensterbank in einem Stück: in der Laibung bis zum Rahmen, vor der Wand mit Überstand vorne und seitlich (ausgeklinkt)
    {const f=uz(V(cm(Pw.x),cm(Pw.y)),u),sf=cm(o.sf??30),A0=cm(s0),A1=cm(e0),B0=cm(s0-ssS),B1=cm(e0+ssE);
@@ -1899,12 +1914,12 @@ function rwmBoxes(){
    grp(()=>{ow(z0,z0+20,-R,L,0,hF+20);ow(z1-20,z1,-R,L,0,hF+20);ow(z0+20,z1-20,-R,L,hF,hF+20)});
    // Türblatt: Kern zwischen den Verkleidungen, Falz davor 10 breiter je Seite
    grp(()=>{ow(k0,k1,fs,fs+sw*vs,10,VOK-CW);ow(k0-10,k1+10,fs+sw*vs,fs+sw*LT,10,VOK-CW+10)});
-   // Drücker je Seite, rund: Rundrosette Ø52 × 10, Hals Ø18 bis 51, Griff Ø18 × 130 zur Bandseite (Achse 60 vor dem Blatt)
+   // Drücker je Seite, rund auf Gehrung: Rundrosette Ø52 × 10, Hals Ø18, Griff Ø18 × 130 zur Bandseite (Achse 60 vor dem Blatt)
    const f=uz(V(cm(Pw.x),cm(Pw.y)),u),lk=cm(lock);
    for(const [face,sg] of [[cm(fs+sw*LT),sw],[cm(fs),-sw]])grp(()=>{
     prism(f.o,f.u,f.z,f.n,circ(lk,hz,26),face,face+sg*10);
-    prism(f.o,f.u,f.z,f.n,circ(lk,hz,9),face+sg*10,face+sg*51);
-    prism(f.o,f.n,f.z,f.u,circ(face+sg*60,hz,9),lk-dir*9,lk+dir*130);
+    // Hals Ø18 und Griff Ø18 × 130 als Bogen auf Gehrung (Knick 60 vor dem Blatt)
+    {const Bp=[0,1,2].map(j=>f.o[j]+f.u[j]*lk+f.n[j]*(face+sg*60)+f.z[j]*hz);elbow(Bp,f.n.map(v=>v*sg),f.u.map(v=>v*dir),50,130,9)}
    });
    // Türbänder rund Ø16 × 110 an der Bandseite, im Winkel zwischen Verkleidung und Falz
    {const te=o.hinge==='e'?cm(k1+10)+8:cm(k0-10)-8,oc=cm(fs+sw*vs)+sw*8,zt=cm(VOK-CW+10);
