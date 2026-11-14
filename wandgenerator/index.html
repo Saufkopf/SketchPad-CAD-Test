@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>SketchPad Pro – Wandgenerator 4.0.4</title>
+<title>SketchPad Pro – Wandgenerator 4.1.0</title>
 <style>
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -1825,59 +1825,91 @@ function b64bytes(s){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.
 function inv3(m){const[a,b,c,d,e,f,g,h,i]=m,A=e*i-f*h,B=-(d*i-f*g),C=d*h-e*g,det=a*A+b*B+c*C;
  return[A/det,-(b*i-c*h)/det,(b*f-c*e)/det,B/det,(a*i-c*g)/det,-(a*f-c*d)/det,C/det,-(a*h-b*g)/det,(a*e-b*d)/det]}
 function rwmBoxes(){
- const H=set.roomH||2600,out=[],W=p=>V(p.x,-p.y); // Plan (y nach unten) → 3DW (y nach oben)
+ const H=set.roomH||2600,W=p=>V(p.x,-p.y); // Plan (y nach unten) → 3DW (y nach oben)
+ // Gruppen wie in den Vorlagen des Nutzers (in SketchUp als Gruppe weiterverwendbar): grp(fn) sammelt alle Teile aus fn
+ let out=[];const root=out,grp=fn=>{const prev=out,G=[];out=G;fn();out=prev;if(G.length)out.push({G})};
  // Quader: Ursprung o (Welt), Richtung u (Einheitsvektor), Länge lx, Tiefe ly (nach links von u), Höhe z0..z1
  const cm=v=>Math.round(v/10)*10;
  const box=(o,u,lx,ly,z0,z1)=>{o=V(cm(o.x),cm(o.y));lx=cm(lx);ly=cm(ly);z0=cm(z0);z1=cm(z1);if(lx<10||ly<10||z1-z0<10)return;const n=V(-u.y,u.x),sx=lx/1960,sy=ly/700,sz=(z1-z0)/1000;
   out.push({M:[u.x*sx,u.y*sx,0,n.x*sy,n.y*sy,0,0,0,sz],T:[o.x,o.y,z0]})};
  const onWall=(P,u,t0,t1,o0,o1,z0,z1)=>{P=V(cm(P.x),cm(P.y));t0=cm(t0);t1=cm(t1);o0=cm(o0);o1=cm(o1);z0=cm(z0);z1=cm(z1);const n=V(-u.y,u.x),ta=Math.min(t0,t1),tb=Math.max(t0,t1);box(add(add(P,mul(u,ta)),mul(n,Math.min(o0,o1))),u,tb-ta,Math.abs(o1-o0),Math.min(z0,z1),Math.max(z0,z1))};
- // ---- Fenster (Kunststoff-Dreh-Kipp-Fenster, Rahmentiefe 80, Ansicht 70) inkl. Brüstung, Sturz, Alu-Sohlbank außen, Fensterbank innen ausgeklinkt
+ // Sonderkörper (eigene Geometrie): Viereck in der Wandebene (t längs der Wand, z Höhe), ausgezogen von o0 bis o1 quer zur Wand.
+ // Damit entstehen Gehrungen (45°) an Rahmen, Flügeln und Verkleidungen wie in den Vorlagen des Nutzers.
+ // Prisma: Vieleck poly in der Ebene (A,B) ab org, ausgezogen in Richtung C von c0 bis c1 → Körper {V,F} (Flächen gegen den Uhrzeigersinn von außen)
+ const prism=(org,A,B,C,poly,c0,c1)=>{if(Math.abs(c1-c0)<1||poly.length<3)return;
+  let pl=poly.slice();let ar=0;for(let i=0;i<pl.length;i++){const p=pl[i],q=pl[(i+1)%pl.length];ar+=p[0]*q[1]-q[0]*p[1]}if(ar<0)pl.reverse();
+  if(c1<c0)[c0,c1]=[c1,c0];
+  const det=A[0]*(B[1]*C[2]-B[2]*C[1])-A[1]*(B[0]*C[2]-B[2]*C[0])+A[2]*(B[0]*C[1]-B[1]*C[0]);if(det<0)pl.reverse();
+  const n=pl.length,pt=(p,c)=>[0,1,2].map(k=>org[k]+A[k]*p[0]+B[k]*p[1]+C[k]*c),Vx=[...pl.map(p=>pt(p,c0)),...pl.map(p=>pt(p,c1))],F=[];
+  F.push([...Array(n).keys()].reverse());F.push([...Array(n).keys()].map(i=>i+n));
+  for(let i=0;i<n;i++){const j=(i+1)%n;F.push([i,j,j+n,i+n])}
+  out.push({V:Vx,F})};
+ // Rahmen je Wand: Ursprung, längs (u), quer (n, nach links), Höhe (z)
+ const uz=(P,u)=>({o:[P.x,P.y,0],u:[u.x,u.y,0],n:[-u.y,u.x,0],z:[0,0,1]});
+ // Kreis als Vieleck (16 Seiten)
+ const circ=(cx,cy,r,k=16)=>[...Array(k).keys()].map(i=>[cx+r*Math.cos(2*Math.PI*(i+.5)/k),cy+r*Math.sin(2*Math.PI*(i+.5)/k)]);
+ const hexOW=(P,u,q,o0,o1)=>{P=V(cm(P.x),cm(P.y));o0=cm(o0);o1=cm(o1);if(Math.abs(o1-o0)<10)return;const f=uz(P,u);
+  prism(f.o,f.u,f.z,f.n,q.map(([t,z])=>[cm(t),cm(z)]),o0,o1)};
+ // Gehrungsrahmen: Rechteck t0..t1 × z0..z1, Profilbreite w, Tiefe o0..o1; noBottom = ohne unteres Stück (Türverkleidung)
+ const miterFrame=(P,u,t0,t1,z0,z1,w,o0,o1,noBottom)=>{
+  const zb=noBottom?z0:z0+w;
+  if(!noBottom)hexOW(P,u,[[t0,z0],[t1,z0],[t1-w,z0+w],[t0+w,z0+w]],o0,o1);
+  hexOW(P,u,[[t0+w,z1-w],[t1-w,z1-w],[t1,z1],[t0,z1]],o0,o1);
+  hexOW(P,u,[[t0,z0],[t0+w,zb],[t0+w,z1-w],[t0,z1]],o0,o1);
+  hexOW(P,u,[[t1-w,zb],[t1,z0],[t1,z1],[t1-w,z1-w]],o0,o1)};
+ // ---- Fenster nach Vorlage des Nutzers: Blendrahmen 30/50 und Flügel 60/70 auf Gehrung, Stulp mit 10er Fuge,
+ //      Griffe an den Flügeln, Fensterbank innen zweiteilig (ausgeklinkt), Glas 20
  const rwmWindow=(Pw,u,o,og,L,R)=>{
-  const ins=o.side||1,fin=ins>0?L:-R,fout=ins>0?-R:L,th=L+R,rev=Math.max(0,Math.min(o.rev??120,th-90)),fc=fin-ins*rev,PD=Math.min(80,th-rev-10),fo=fc-ins*PD;
-  const s0=og.s,e0=og.e,zU=o.fbUK??900,zS=zU+(o.fbD??30),zO=o.fOK??2150,F=10,SW=70,FW=60,[ssS,ssE]=sillSE(o,og);
-  const ow=(t0,t1,a,b,z0,z1)=>onWall(Pw,u,t0,t1,a,b,z0,z1);
-  // Mauerwerk: Brüstung innen bis Rahmen, außen tiefer für die Sohlbank, Sturz
-  ow(s0,e0,fin,fo,0,zU);ow(s0,e0,fo,fout,0,zU-20);ow(s0,e0,-R,L,zO,H);
-  // Alu-Sohlbank außen (20 stark, 40 Überstand)
-  ow(s0,e0,fo,fout-ins*40,zU-20,zU);
-  // Fensterbank innen: in der Laibung so breit wie das Fenster, vor der Wand mit seitlichem Überstand – nichts ragt in die Mauer
-  ow(s0,e0,fc,fin,zU,zS);ow(s0-ssS,e0+ssE,fin,fin+ins*(o.sf??30),zU,zS);
-  // Blendrahmen (Stock) mit 10 mm Fuge seitlich und oben
-  const a=s0+F,b=e0-F,z0=zU,z1=zO-F;
-  ow(a,a+SW,fo,fc,z0,z1);ow(b-SW,b,fo,fc,z0,z1);ow(a+SW,b-SW,fo,fc,z0,z0+SW);ow(a+SW,b-SW,fo,fc,z1-SW,z1);
-  const two=(o.flg??(b-a>1300?2:1))===2,mid=(a+b)/2,fields=two?[[a+SW,mid-SW/2],[mid+SW/2,b-SW]]:[[a+SW,b-SW]];
-  if(two)ow(mid-SW/2,mid+SW/2,fo,fc,z0+SW,z1-SW);
-  const fi=fc+ins*10,fa=fc-ins*60; // Flügel steht 10 mm in den Raum
-  fields.forEach(([p,q],k)=>{const y0=z0+SW,y1=z1-SW;
-   ow(p,p+FW,fi,fa,y0,y1);ow(q-FW,q,fi,fa,y0,y1);ow(p+FW,q-FW,fi,fa,y0,y0+FW);ow(p+FW,q-FW,fi,fa,y1-FW,y1);
-   // Isolierglas 24 mm
-   ow(p+FW,q-FW,fc-ins*20,fc-ins*40,y0+FW,y1-FW);
-   // Griff (Olive) auf der Schließseite, Raumseite
-   const hx=two?(k===0?q-30:p+30):q-30,hz=Math.min(y1-200,Math.max(y0+300,(y0+y1)/2));
-   ow(hx-20,hx+20,fi,fi+ins*10,hz-40,hz+40);ow(hx-10,hx+10,fi+ins*10,fi+ins*40,hz-10,hz+10);ow(hx-10,hx+10,fi+ins*40,fi+ins*60,hz-140,hz+10);
+  const ins=o.side||1,fin=ins>0?L:-R,th=L+R,FD=50,FW=30,SW=60;
+  const rev=Math.max(0,Math.min(o.rev??110,th-FD)),dO=d=>fin-ins*d; // d = Tiefe ab Wandfläche innen (0 = Raumseite)
+  const s0=og.s,e0=og.e,zU=o.fbUK??900,zS=zU+(o.fbD??30),zO=o.fOK??2150,[ssS,ssE]=sillSE(o,og);
+  const ow=(t0,t1,d0,d1,z0,z1)=>onWall(Pw,u,t0,t1,dO(d0),dO(d1),z0,z1),mf=(t0,t1,z0,z1,w,d0,d1)=>miterFrame(Pw,u,t0,t1,z0,z1,w,dO(d0),dO(d1));
+  // Mauerwerk: Brüstung innen bis FBUK, unter dem Rahmen und außen bis FBOK; Sturz über FOK
+  ow(s0,e0,0,rev,0,zU);ow(s0,e0,rev,th,0,zS);ow(s0,e0,0,th,zO,H);
+  const a=s0+FW,b=e0-FW,y0=zS+FW,y1=zO-FW,two=(o.flg??(b-a>1300?2:1))===2,m=cm((a+b)/2);
+  const sashes=two?[[a,m-10,1],[m,b,-1]]:[[a,b,1]],hz=cm((y0+y1)/2-40);
+  grp(()=>{ // Gruppe Fenster
+   // Blendrahmen mit Stulp-Fuge
+   grp(()=>{mf(s0,e0,zS,zO,FW,rev,rev+FD);if(two)ow(m-10,m,rev,rev+FD,y0,y1)});
+   // Flügel mit Glas und Griff (Rosette 40×80, Hals, Olive 150 nach unten, an der Schließseite)
+   for(const [p,q,side] of sashes)grp(()=>{
+    mf(p,q,y0,y1,SW,rev-20,rev+FD);
+    ow(p+SW,q-SW,rev,rev+20,y0+SW,y1-SW); // Isolierglas
+    const hx=two?(side>0?q-SW/2:p+SW/2):q-SW/2;
+    ow(hx-20,hx+20,rev-30,rev-20,hz-40,hz+40);ow(hx-10,hx+10,rev-60,rev-30,hz-10,hz+10);ow(hx-10,hx+10,rev-80,rev-60,hz-140,hz+10);
+   });
+   // Fensterbank in einem Stück: in der Laibung bis zum Rahmen, vor der Wand mit Überstand vorne und seitlich (ausgeklinkt)
+   {const f=uz(V(cm(Pw.x),cm(Pw.y)),u),sf=cm(o.sf??30),A0=cm(s0),A1=cm(e0),B0=cm(s0-ssS),B1=cm(e0+ssE);
+    prism(f.o,f.u,f.n,f.z,[[B0,dO(-sf)],[B1,dO(-sf)],[B1,dO(0)],[A1,dO(0)],[A1,dO(rev)],[A0,dO(rev)],[A0,dO(0)],[B0,dO(0)]].map(([t,oo])=>[t,cm(oo)]),cm(zU),cm(zS))}
   });
  };
- // ---- Tür nach ÖNORM / Kunex-Fertigzarge: RBL = FSTL+80, TBA = FSTL+50; Höhen FSTL = VOK−90, TBA = FSTL+20, RBL = FSTL+40
+ // ---- Tür nach Vorlage des Nutzers: Verkleidung 80 beidseitig auf Gehrung, Zarge 20 in der Laibung,
+ //      gefälztes Türblatt 40 (Kern zwischen den Verkleidungen, Falz davor), Drücker beidseitig in Höhe 1050
  const rwmDoor=(Pw,u,o,og,L,R)=>{
   const s0=og.s,e0=og.e,ow=(t0,t1,a,b,z0,z1)=>onWall(Pw,u,t0,t1,a,b,z0,z1);
-  const sw=o.swing||1,fs=sw>0?L:-R,fo=sw>0?-R:L,vs=Math.max(10,o.vs??15),ue=o.ue??72,VOK=o.vok??2080;
-  const hF=VOK-90,hT=hF+20,hR=hF+40,Z=40,RF=30; // Zargenspiegel 40, Falz 30 (volle cm)
+  const sw=o.swing||1,fs=sw>0?L:-R,fo=sw>0?-R:L,vs=cm(Math.max(10,o.vs??15)),ue=o.ue??72,VOK=o.vok??2080,CW=80;
+  const c0=s0-ue,c1=e0+ue,hF=VOK-90,hR=VOK-50,LT=Math.max(40,vs+20);
   ow(s0,e0,-R,L,hR,H); // Sturz über der Rohbaulichte
-  // Zarge (Futter) mit Falz auf der Aufgehseite
-  const inner=fs-sw*RF;
-  ow(s0,s0+Z,fo,inner,0,hR);ow(e0-Z,e0,fo,inner,0,hR);ow(s0+Z,e0-Z,fo,inner,hF,hR);
-  ow(s0,s0+Z-RF,inner,fs,0,hR);ow(e0-Z+RF,e0,inner,fs,0,hR);ow(s0+Z-RF,e0-Z+RF,inner,fs,hT,hR);
-  // Verkleidung beidseitig (Gegenseite ab Durchgangslichte, Aufgehseite ab Türblatt)
-  ow(s0-ue,s0+Z,fo,fo-sw*vs,0,VOK);ow(e0-Z,e0+ue,fo,fo-sw*vs,0,VOK);ow(s0+Z,e0-Z,fo,fo-sw*vs,hF,VOK);
-  ow(s0-ue,s0+Z-RF,fs,fs+sw*vs,0,VOK);ow(e0-Z+RF,e0+ue,fs,fs+sw*vs,0,VOK);ow(s0+Z-RF,e0-Z+RF,fs,fs+sw*vs,hT,VOK);
-  // Türblatt 40 mm, geschlossen im Falz, 8 mm Bodenluft
-  const l0=s0+Z-RF,l1=e0-Z+RF;ow(l0,l1,inner,fs+sw*vs,10,hT);
-  // Drücker beidseitig (Rosette, Stift, Hebel) auf der Schlossseite, Höhe 1050
-  const lock=o.hinge==='e'?l0+70:l1-70,dir=o.hinge==='e'?1:-1,hz=1050;
-  for(const [face,sg] of [[fs+sw*vs,sw],[inner,-sw]]){
-   ow(lock-30,lock+30,face,face+sg*10,hz-30,hz+30);ow(lock-10,lock+10,face+sg*10,face+sg*50,hz-10,hz+10);
-   ow(lock,lock+dir*130,face+sg*50,face+sg*70,hz-10,hz+10);
-  }
+  const mid=(s0+e0)/2,zw=Math.min(c1-c0-140,e0-s0),z0=mid-zw/2,z1=mid+zw/2,k0=c0+CW,k1=c1-CW;
+  const lock=o.hinge==='e'?k0+60:k1-60,dir=o.hinge==='e'?1:-1,hz=1050;
+  grp(()=>{ // Gruppe Tür
+   // Verkleidung je Seite, oben auf Gehrung
+   grp(()=>miterFrame(Pw,u,c0,c1,0,VOK,CW,fs,fs+sw*vs,true));grp(()=>miterFrame(Pw,u,c0,c1,0,VOK,CW,fo,fo-sw*vs,true));
+   // Zarge (Futter) 20 in der Laibung, lichte Breite = VAM − 180
+   grp(()=>{ow(z0,z0+20,-R,L,0,hF+20);ow(z1-20,z1,-R,L,0,hF+20);ow(z0+20,z1-20,-R,L,hF,hF+20)});
+   // Türblatt: Kern zwischen den Verkleidungen, Falz davor 10 breiter je Seite
+   grp(()=>{ow(k0,k1,fs,fs+sw*vs,10,VOK-CW);ow(k0-10,k1+10,fs+sw*vs,fs+sw*LT,10,VOK-CW+10)});
+   // Drücker je Seite, rund: Rundrosette Ø52 × 10, Hals Ø18 bis 51, Griff Ø18 × 130 zur Bandseite (Achse 60 vor dem Blatt)
+   const f=uz(V(cm(Pw.x),cm(Pw.y)),u),lk=cm(lock);
+   for(const [face,sg] of [[cm(fs+sw*LT),sw],[cm(fs),-sw]])grp(()=>{
+    prism(f.o,f.u,f.z,f.n,circ(lk,hz,26),face,face+sg*10);
+    prism(f.o,f.u,f.z,f.n,circ(lk,hz,9),face+sg*10,face+sg*51);
+    prism(f.o,f.n,f.z,f.u,circ(face+sg*60,hz,9),lk-dir*9,lk+dir*130);
+   });
+   // Türbänder rund Ø16 × 110 an der Bandseite, im Winkel zwischen Verkleidung und Falz
+   {const te=o.hinge==='e'?cm(k1+10)+8:cm(k0-10)-8,oc=cm(fs+sw*vs)+sw*8,zt=cm(VOK-CW+10);
+    grp(()=>{for(const z of [250,zt-360])prism(f.o,f.u,f.n,f.z,circ(te,oc,8),z,z+110)})}
+  });
  };
  for(const w of S.walls){
   const g=A.geo.G.get(w.id);if(!g?.poly)continue;const P0=N(w.a),Pw=W(P0),u=W(g.d),[L,R]=sides(w);
@@ -1900,38 +1932,80 @@ function rwmBoxes(){
  for(const o of S.openings||[]){if(o.type!=='radiator')continue;const g=opGeom(o);if(!g)continue;const b=radBox(o,g),P0=g.A;
   onWall(W(P0),W(g.u),g.s,g.e,b.o1,b.o2,o.uk??150,(o.uk??150)+(o.h??600))}
  for(const b of S.blocks||[])box(V(b.x,-(b.y+b.d)),V(1,0),b.w,b.d,0,b.full===false?(b.h||1100):H);
- return out;
+ return root;
 }
+// Sonderkörper mit eigener Geometrie (Block 25/27/26…/29/2c): Punkte V, Flächen F als Punktlisten gegen den Uhrzeigersinn von außen
+function polyGeoBytes(V,F){
+ const E=[],key=new Map(),co=F.map(f=>f.map((v,i)=>{const w=f[(i+1)%f.length],k=Math.min(v,w)+'_'+Math.max(v,w);if(!key.has(k)){key.set(k,E.length);E.push([v,w])}return[key.get(k),v]}));
+ const size=12+16+F.reduce((s,f)=>s+40+16+16*f.length+16,0)+16+20*E.length+16+24*V.length;
+ const buf=new ArrayBuffer(size),dv=new DataView(buf);let q=0;const u=v=>{dv.setUint32(q,v,true);q+=4},fl=v=>{dv.setFloat64(q,v,true);q+=8};
+ u(0x25);u(0);dv.setUint16(q,1,true);dv.setUint16(q+2,1,true);q+=4;
+ u(0x27);u(0);u(1);u(F.length);
+ F.forEach((f,fi)=>{let n=[0,0,0];for(let i=0;i<f.length;i++){const a=V[f[i]],b=V[f[(i+1)%f.length]];n[0]+=(a[1]-b[1])*(a[2]+b[2]);n[1]+=(a[2]-b[2])*(a[0]+b[0]);n[2]+=(a[0]-b[0])*(a[1]+b[1])}
+  const l=Math.hypot(...n)||1;n=n.map(x=>x/l);const d=-f.reduce((s,v)=>s+n[0]*V[v][0]+n[1]*V[v][1]+n[2]*V[v][2],0)/f.length;
+  u(0x26);u(1);fl(n[0]);fl(n[1]);fl(n[2]);fl(d);u(0x2b);u(0);u(1);u(f.length);for(const [e,v] of co[fi]){u(0x2a);u(2);u(e);u(v)}u(0x2f);u(0);u(1);u(0)});
+ u(0x29);u(0);u(1);u(E.length);for(const [a,b] of E){u(0x28);u(1);u(1);u(a);u(b)}
+ u(0x2c);u(0);u(1);u(V.length);for(const p of V){fl(p[0]);fl(p[1]);fl(p[2])}
+ return new Uint8Array(buf);
+}
+const RWM_GRPTXT='R3J1cHBlACAgICAgICAgICAgICAAICAgICAgICAgICAgICAgICAgICAAVGVtcG9y5HJncnVwcGUgICAgICAAVGVtcG9y5HJncnVwcGUgICAgICAAICAgICAgICAgICAgICAgICAgICAAICAgICAgICAgICAgICAgICAgICAAICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgAA==';
 function exportRWM(filter,name){
  if(!S.walls.length){toast('Keine Wände zum Exportieren.');return}
- A=analyze(S);let boxes=rwmBoxes();if(filter)boxes=boxes.filter(filter);if(!boxes.length){toast('Nichts zu exportieren.');return}
- const HDR=b64bytes(RWM_TPL.HDR),O1=b64bytes(RWM_TPL.O1),ON=b64bytes(RWM_TPL.ON),TR=b64bytes(RWM_TPL.TR);
- const parts=[],xs=[],ys=[],zs=[];
+ A=analyze(S);
+ // Baum: Quader {M,T}, Sonderkörper {V,F}, Gruppe {G:[…]} (Kinder in Weltkoordinaten, Gruppenmatrix = Einheit)
+ const prune=list=>list.map(x=>x.G?{G:prune(x.G)}:x).filter(x=>x.G?x.G.length:!filter||filter(x));
+ let items=prune(rwmBoxes());
+ // Das erste Objekt muss ein einfacher Quader sein (er enthält Würfel und Material, auf die alle Quader verweisen)
+ const fi=items.findIndex(x=>x.M);if(fi<0){toast('Nichts zu exportieren.');return}
+ items=[items[fi],...items.filter((x,i)=>i!==fi)];
+ const HDR=b64bytes(RWM_TPL.HDR),O1=b64bytes(RWM_TPL.O1),ON=b64bytes(RWM_TPL.ON),TR=b64bytes(RWM_TPL.TR),GT=b64bytes(RWM_GRPTXT);
+ const parts=[],xs=[],ys=[],zs=[],cnt={box:0,hex:0,grp:0,faces:0};
+ const corners=b=>{const r=[];for(const cx of [0,1960])for(const cy of [0,700])for(const cz of [0,1000])r.push([cx*b.M[0]+cy*b.M[3]+cz*b.M[6]+b.T[0],cx*b.M[1]+cy*b.M[4]+cz*b.M[7]+b.T[1],cx*b.M[2]+cy*b.M[5]+cz*b.M[8]+b.T[2]]);return r};
+ const ptsOf=x=>x.G?x.G.flatMap(ptsOf):x.V?x.V:corners(x);
  // Raum an den Nullpunkt schieben: linke untere Ecke = (0,0). Sonst zeigt 3DW-Plus den Nullpunkt und den weit entfernten Raum
  // gemeinsam an, und der Raum liegt am Fensterrand.
  let ox=Infinity,oy=Infinity;
- for(const b of boxes)for(const cx of [0,1960])for(const cy of [0,700])for(const cz of [0,1000]){ox=Math.min(ox,cx*b.M[0]+cy*b.M[3]+cz*b.M[6]+b.T[0]);oy=Math.min(oy,cx*b.M[1]+cy*b.M[4]+cz*b.M[7]+b.T[1])}
+ for(const p of items.flatMap(ptsOf)){ox=Math.min(ox,p[0]);oy=Math.min(oy,p[1])}
  ox=Math.round(ox/10)*10;oy=Math.round(oy/10)*10;
- const h=HDR.slice();new DataView(h.buffer).setUint32(0x80,boxes.length,true);parts.push(h);
- boxes.forEach((b,i)=>{const o=(i?ON:O1).slice(),dv=new DataView(o.buffer),Mi=inv3(b.M),T=[b.T[0]-ox,b.T[1]-oy,b.T[2]],Ti=[0,1,2].map(k=>-(T[0]*Mi[k]+T[1]*Mi[3+k]+T[2]*Mi[6+k]));
-  [...b.M,...T,...Mi,...Ti].forEach((v,k)=>dv.setFloat64(0x14+k*8,v,true));parts.push(o);
-  for(const cx of [0,1960])for(const cy of [0,700])for(const cz of [0,1000]){xs.push(cx*b.M[0]+cy*b.M[3]+cz*b.M[6]+T[0]);ys.push(cx*b.M[1]+cy*b.M[4]+cz*b.M[7]+T[1]);zs.push(cx*b.M[2]+cy*b.M[5]+cz*b.M[8]+T[2])}});
+ const sh=x=>x.G?{G:x.G.map(sh)}:x.V?{V:x.V.map(p=>[p[0]-ox,p[1]-oy,p[2]]),F:x.F}:{M:x.M,T:[x.T[0]-ox,x.T[1]-oy,x.T[2]]};
+ items=items.map(sh);
+ const h=HDR.slice();new DataView(h.buffer).setUint32(0x80,items.length,true);parts.push(h);
+ const ID=[1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0];
+ const bbOf=P=>[0,1,2].flatMap(k=>[Math.min(...P.map(p=>p[k])),Math.max(...P.map(p=>p[k]))]);
+ const u32=v=>{const b=new Uint8Array(4);new DataView(b.buffer).setUint32(0,v,true);return b};
+ const write=x=>{
+  if(x.G){ // Gruppe: Kopf wie ein Objekt mit Text „Gruppe / Temporärgruppe“, ohne Element, mit Kindern
+   cnt.grp++;const head=ON.slice(0,0x1c7),dv=new DataView(head.buffer);head.set(GT,0x10c);
+   ID.forEach((v,k)=>dv.setFloat64(0x14+k*8,v,true));bbOf(ptsOf(x)).forEach((v,k)=>dv.setFloat64(0xdc+k*8,v,true));
+   parts.push(head,u32(0),u32(0),u32(x.G.length));x.G.forEach(write);parts.push(u32(1));return}
+  if(x.V){ // Sonderkörper: Objekt und Element mit Einheitsmatrix, Punkte direkt in Weltkoordinaten
+   cnt.hex++;cnt.faces+=x.F.length;const head=ON.slice(0,0x2f0),dv=new DataView(head.buffer),bx=bbOf(x.V);
+   ID.forEach((v,k)=>{dv.setFloat64(0x14+k*8,v,true);dv.setFloat64(0x1e3+k*8,v,true)});
+   bx.forEach((v,k)=>{dv.setFloat64(0xdc+k*8,v,true);dv.setFloat64(0x2ab+k*8,v,true)});
+   parts.push(head,polyGeoBytes(x.V,x.F),ON.slice(0x2f8));
+   for(const p of x.V){xs.push(p[0]);ys.push(p[1]);zs.push(p[2])}return}
+  const o=(cnt.box?ON:O1).slice(),dv=new DataView(o.buffer),Mi=inv3(x.M),T=x.T,Ti=[0,1,2].map(k=>-(T[0]*Mi[k]+T[1]*Mi[3+k]+T[2]*Mi[6+k]));cnt.box++;
+  [...x.M,...T,...Mi,...Ti].forEach((v,k)=>dv.setFloat64(0x14+k*8,v,true));parts.push(o);
+  for(const p of corners(x)){xs.push(p[0]);ys.push(p[1]);zs.push(p[2])}};
+ items.forEach(write);
  const t=TR.slice(),dv=new DataView(t.buffer),bb=[Math.min(...xs),Math.max(...xs),Math.min(...ys),Math.max(...ys),Math.min(...zs),Math.max(...zs)],base=0x12cd;
  for(const o of [0x16f2,0x1807])bb.forEach((v,k)=>dv.setFloat64(o-base+k*8,v,true));
  [bb[0],bb[1],bb[2],bb[3],0,0].forEach((v,k)=>dv.setFloat64(0x1958-base+k*8,v,true));
  const hw=(bb[1]-bb[0])/50,hh=(bb[3]-bb[2])/50;[-hw,hw,-hh,hh].forEach((v,k)=>dv.setFloat64(0x1ac9-base+k*8,v,true));
- // Objekt-IDs: jeder neue Datensatz bekommt fortlaufend eine Nummer. Kopf 1, erster Quader (Würfel + Material) 20,
- // jeder weitere Quader 2 (09, 05), Nachspann 3 (Ansicht 37, 33, 34). Letztes uint32 = nächste freie ID = 2·n + 23
- // (Leer_A: 4 Quader → 31). Der Nachspann verweist bei +0x6bf auf die letzte ID (Datensatz 34) = 2·n + 22.
- // Stimmt eines davon nicht, stürzt 3DW-Plus beim nächsten Laden ab.
- const nextId=2*boxes.length+23;
- dv.setUint32(0x6bf,nextId-1,true);
- dv.setUint32(t.length-4,nextId,true);
+ // Objekt-IDs: jeder neue Datensatz bekommt fortlaufend eine Nummer. Kopf + erster Quader (Würfel + Material) 21,
+ // jeder weitere Quader 2 (09, 05), jeder Sonderkörper 6 + 2 je Fläche (09, 05, 25, 27, 2b/2f je Fläche, 29, 2c), jede Gruppe 1 (09),
+ // Nachspann 3 (37, 33, 34).
+ // Der Nachspann verweist bei +0x6bf auf C + 3, das letzte uint32 auf C + 4 (C = IDs vor dem Nachspann).
+ // Stimmt eines davon nicht, stürzt 3DW-Plus beim nächsten Laden ab. (Leer_A: 4 Quader → 30 / 31)
+ const C=21+2*(cnt.box-1)+6*cnt.hex+2*cnt.faces+cnt.grp;
+ dv.setUint32(0x6bf,C+3,true);
+ dv.setUint32(t.length-4,C+4,true);
  parts.push(t);
  const blob=new Blob(parts,{type:'application/octet-stream'}),a=document.createElement('a'),d=new Date(),z=n=>String(n).padStart(2,'0');
  a.href=URL.createObjectURL(blob);a.download=name||`Aufmass_${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.rwm`;
  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
- toast(boxes.length+' Quader als 3DW-Plus-Datei (.rwm) gespeichert.');
+ toast((cnt.box+cnt.hex)+' Teile in '+cnt.grp+' Gruppen als 3DW-Plus-Datei (.rwm) gespeichert.');
+ return blob;
 }
 window.__rwm=()=>{A=analyze(S);return rwmBoxes()};window.__exportRWM=exportRWM;
 
