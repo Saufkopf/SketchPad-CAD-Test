@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>SketchPad Pro – Wandgenerator 4.0.3</title>
+<title>SketchPad Pro – Wandgenerator 4.0.4</title>
 <style>
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -1907,8 +1907,13 @@ function exportRWM(filter,name){
  A=analyze(S);let boxes=rwmBoxes();if(filter)boxes=boxes.filter(filter);if(!boxes.length){toast('Nichts zu exportieren.');return}
  const HDR=b64bytes(RWM_TPL.HDR),O1=b64bytes(RWM_TPL.O1),ON=b64bytes(RWM_TPL.ON),TR=b64bytes(RWM_TPL.TR);
  const parts=[],xs=[],ys=[],zs=[];
+ // Raum an den Nullpunkt schieben: linke untere Ecke = (0,0). Sonst zeigt 3DW-Plus den Nullpunkt und den weit entfernten Raum
+ // gemeinsam an, und der Raum liegt am Fensterrand.
+ let ox=Infinity,oy=Infinity;
+ for(const b of boxes)for(const cx of [0,1960])for(const cy of [0,700])for(const cz of [0,1000]){ox=Math.min(ox,cx*b.M[0]+cy*b.M[3]+cz*b.M[6]+b.T[0]);oy=Math.min(oy,cx*b.M[1]+cy*b.M[4]+cz*b.M[7]+b.T[1])}
+ ox=Math.round(ox/10)*10;oy=Math.round(oy/10)*10;
  const h=HDR.slice();new DataView(h.buffer).setUint32(0x80,boxes.length,true);parts.push(h);
- boxes.forEach((b,i)=>{const o=(i?ON:O1).slice(),dv=new DataView(o.buffer),Mi=inv3(b.M),T=b.T,Ti=[0,1,2].map(k=>-(T[0]*Mi[k]+T[1]*Mi[3+k]+T[2]*Mi[6+k]));
+ boxes.forEach((b,i)=>{const o=(i?ON:O1).slice(),dv=new DataView(o.buffer),Mi=inv3(b.M),T=[b.T[0]-ox,b.T[1]-oy,b.T[2]],Ti=[0,1,2].map(k=>-(T[0]*Mi[k]+T[1]*Mi[3+k]+T[2]*Mi[6+k]));
   [...b.M,...T,...Mi,...Ti].forEach((v,k)=>dv.setFloat64(0x14+k*8,v,true));parts.push(o);
   for(const cx of [0,1960])for(const cy of [0,700])for(const cz of [0,1000]){xs.push(cx*b.M[0]+cy*b.M[3]+cz*b.M[6]+T[0]);ys.push(cx*b.M[1]+cy*b.M[4]+cz*b.M[7]+T[1]);zs.push(cx*b.M[2]+cy*b.M[5]+cz*b.M[8]+T[2])}});
  const t=TR.slice(),dv=new DataView(t.buffer),bb=[Math.min(...xs),Math.max(...xs),Math.min(...ys),Math.max(...ys),Math.min(...zs),Math.max(...zs)],base=0x12cd;
