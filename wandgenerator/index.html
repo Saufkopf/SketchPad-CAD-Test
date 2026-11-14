@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>SketchPad Pro – Wandgenerator 4.0.2</title>
+<title>SketchPad Pro – Wandgenerator 4.0.3</title>
 <style>
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -1915,9 +1915,13 @@ function exportRWM(filter,name){
  for(const o of [0x16f2,0x1807])bb.forEach((v,k)=>dv.setFloat64(o-base+k*8,v,true));
  [bb[0],bb[1],bb[2],bb[3],0,0].forEach((v,k)=>dv.setFloat64(0x1958-base+k*8,v,true));
  const hw=(bb[1]-bb[0])/50,hh=(bb[3]-bb[2])/50;[-hw,hw,-hh,hh].forEach((v,k)=>dv.setFloat64(0x1ac9-base+k*8,v,true));
- // Zähler am Dateiende (Anzahl gespeicherter Elemente): Würfelgeometrie 27 + 1 je Quader (Leer_A: 4 Quader → 31).
- // Stimmt er nicht, reserviert 3DW-Plus zu wenig Speicher → Absturz beim nächsten Laden.
- dv.setUint32(t.length-4,27+boxes.length,true);
+ // Objekt-IDs: jeder neue Datensatz bekommt fortlaufend eine Nummer. Kopf 1, erster Quader (Würfel + Material) 20,
+ // jeder weitere Quader 2 (09, 05), Nachspann 3 (Ansicht 37, 33, 34). Letztes uint32 = nächste freie ID = 2·n + 23
+ // (Leer_A: 4 Quader → 31). Der Nachspann verweist bei +0x6bf auf die letzte ID (Datensatz 34) = 2·n + 22.
+ // Stimmt eines davon nicht, stürzt 3DW-Plus beim nächsten Laden ab.
+ const nextId=2*boxes.length+23;
+ dv.setUint32(0x6bf,nextId-1,true);
+ dv.setUint32(t.length-4,nextId,true);
  parts.push(t);
  const blob=new Blob(parts,{type:'application/octet-stream'}),a=document.createElement('a'),d=new Date(),z=n=>String(n).padStart(2,'0');
  a.href=URL.createObjectURL(blob);a.download=name||`Aufmass_${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.rwm`;
